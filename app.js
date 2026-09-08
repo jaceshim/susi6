@@ -9,6 +9,7 @@ const KEY = 'ratio2027:v1';
 /* ---------- 상태 ---------- */
 let S = { watch: [], auto: true, period: 300, sort: 'add' };
 let IDX = null;                 // data/index.json
+let ST = null;                  // data/status.json (수집 진단)
 const CACHE = new Map();        // univId -> data/u/<id>.json
 let timer = null, tick = null, nextAt = 0, loading = false;
 
@@ -89,6 +90,14 @@ async function getJSON(url) {
 
 async function fetchIndex() { IDX = await getJSON('data/index.json'); }
 
+// 진단은 있으면 좋고 없어도 되는 정보라 실패를 무시한다.
+async function fetchStatus() {
+  try {
+    const r = await fetch('data/status.json?t=' + Date.now(), { cache: 'no-store' });
+    ST = r.ok ? await r.json() : null;
+  } catch (e) { ST = null; }
+}
+
 async function fetchUniv(id) {
   const d = await getJSON('data/u/' + id + '.json');
   CACHE.set(id, d);
@@ -101,7 +110,7 @@ async function refresh(quiet) {
   $('refresh').disabled = true;
   $('hrefresh').disabled = true;
   try {
-    await fetchIndex();
+    await Promise.all([fetchIndex(), fetchStatus()]);
     const ids = [...new Set(S.watch.map((w) => w.u))];
     await Promise.all(ids.map((id) => fetchUniv(id).catch(() => null)));
     render();
@@ -411,6 +420,18 @@ function filterTable() {
   $('tcount').textContent = n + '행';
 }
 
+/** 계열 차단을 문장으로 */
+function blockedNote() {
+  const hs = ST && ST.hostStat;
+  if (!hs) return '';
+  const NAMES = { jinhak: '진학사(jinhakapply)', uway: '유웨이(uwayapply)' };
+  const b = Object.keys(hs).filter((k) => hs[k] && hs[k].blocked);
+  if (!b.length) return '';
+  return '<b>' + b.map((k) => NAMES[k]).join(' · ') + ' 경쟁률 서버가 수집 서버의 접속을 차단</b>해, 해당 ' +
+    b.reduce((n, k) => n + (hs[k].total || 0), 0) + '개 대학은 목록에서 고를 수 없습니다. ' +
+    '카드 없이도 각 대학 원본 페이지 링크는 그대로 열립니다.';
+}
+
 function noteHTML() {
   if (!IDX) return '';
   const bad = (IDX.univs || []).filter((u) => !u.ok && !u.stale);
@@ -419,7 +440,8 @@ function noteHTML() {
     '<li>경쟁률은 <b>지원인원 ÷ 모집인원</b>으로 다시 계산하며, 원본 표의 값과 동일합니다.</li>' +
     '<li>수집은 15분마다 돌지만, <b>원본 갱신 주기는 대학마다 10분~1시간</b>입니다. 카드의 <b>기준 시각</b>이 원본이 표시한 시각입니다.</li>' +
     '<li>수집 성공 ' + (IDX.ok || 0) + ' / ' + (IDX.total || 0) + '개 대학' +
-      (bad.length ? ' · 미수집 ' + bad.length + '곳(대학 자체 페이지 또는 준비중)' : '') + '</li>' +
+      (bad.length ? ' · 미수집 ' + bad.length + '곳(대학 자체 페이지, 준비중, 또는 수집 서버 차단)' : '') + '</li>' +
+    (blockedNote() ? '<li>' + blockedNote() + '</li>' : '') +
     '</ul></div>';
 }
 
@@ -439,11 +461,23 @@ function paintPanel() {
   if (IDX) {
     const bad = (IDX.univs || []).filter((u) => !u.ok && !u.stale);
     st.innerHTML = '수집 시각 <b>' + esc(shortTime(IDX.built)) + '</b><br>성공 <b>' + (IDX.ok || 0) + '</b> / ' + (IDX.total || 0) + '개 대학' +
+      hostBlockHTML() +
       (bad.length ? '<br>미수집 ' + bad.length + '곳: ' + esc(bad.slice(0, 6).map((u) => u.name).join(', ')) + (bad.length > 6 ? ' 외' : '') : '');
   } else {
     st.textContent = 'data/index.json 을 아직 읽지 못했습니다.';
   }
   $('addbtn').disabled = !selUniv || S.watch.length >= MAXW;
+}
+
+/** 한 계열(진학사/유웨이)이 통째로 막힌 경우를 알려준다. */
+function hostBlockHTML() {
+  const hs = ST && ST.hostStat;
+  if (!hs) return '';
+  const NAMES = { jinhak: '진학사 계열', uway: '유웨이 계열' };
+  const rows = Object.keys(hs).filter((k) => hs[k] && (hs[k].blocked || hs[k].skipped))
+    .map((k) => NAMES[k] + ' ' + (hs[k].total || 0) + '곳 ' + (hs[k].blocked ? '차단' : '건너뜀'));
+  if (!rows.length) return '';
+  return '<br><span style="color:var(--reach)">⚠ ' + esc(rows.join(' · ')) + '</span>';
 }
 
 function paintFoot() {

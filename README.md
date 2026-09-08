@@ -29,6 +29,8 @@ scripts/parse-in-page.js        브라우저 안에서 도는 표 파서
 scripts/seed-snippet.js         브라우저 콘솔에 붙여 대학 목록을 뽑는 스니펫 (권장)
 scripts/seed-univs.mjs          저장한 허브 HTML 로 대학 목록을 만드는 스크립트
 scripts/probe.mjs               러너에서 각 호스트에 닿는지 확인하는 진단
+scripts/browser.mjs             브라우저 실행 공통 모듈 (UA·헤더·자동화 흔적 제거)
+data/ua.txt                     쓰고 싶은 User-Agent (없으면 기본값)
 data/univs.json                 대학 목록 (수집기가 갱신하거나 직접 심는 파일)
 data/probe.json                 마지막 접속 진단 결과
 .github/workflows/ratio.yml     15분마다 수집 → 커밋
@@ -71,7 +73,91 @@ data/probe.json                 마지막 접속 진단 결과
 > 그 경우 페이지와 `data/*.json` 은 URL 을 아는 누구나 볼 수 있습니다. 담은 목록은 브라우저에만
 > 저장되므로 공유되지 않습니다.
 
-## 대학 목록이 비어 있을 때
+## 실행 환경 진단 결과 (2026-09-08 확인)
+
+GitHub Actions 러너에서 세 호스트를 열어본 결과입니다 (`data/probe.json`).
+
+| 호스트 | 결과 | 대상 |
+|---|---|---|
+| `www.jinhak.com` (허브) | **403 · "안전한 접속 확인"** | 대학 목록 |
+| `addon.jinhakapply.com` | **403 · "안전한 접속 확인"** | 85개교 |
+| `ratio.uwayapply.com` | **200 · 정상 (표 확인)** | 88개교 |
+
+진학사 계열이 러너 IP(미국 리전)를 차단합니다. 유웨이는 정상이므로 **88개교는 Actions 로 그대로 수집됩니다.**
+그래서 설정은 두 단계로 나뉩니다.
+
+### 1단계 — 대학 목록 심기 (필수)
+
+허브가 막혀 있으니 목록은 브라우저에서 한 번 뽑아 심습니다.
+
+1. 크롬에서 [허브 페이지](https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727)를 열고 끝까지 스크롤
+2. F12 → Console 에 `scripts/seed-snippet.js` 내용을 전부 붙여넣고 Enter
+3. 다운로드된 `univs.json` 을 `data/univs.json` 으로 넣고 push
+
+```bash
+git add data/univs.json && git commit -m "chore(data): 대학 목록 시드" && git push
+```
+
+이것만 하면 Actions 가 15분마다 **유웨이 88개교**를 수집합니다. 진학사 85개교는 목록에 남지만
+`ok: false` 로 표시되고 페이지에서 "진학사 계열 85곳 차단" 이라고 안내됩니다.
+수집기는 차단된 호스트를 첫 요청에서 알아보고 나머지를 건너뛰므로 실행 시간도 낭비하지 않습니다.
+
+### 실제 브라우저처럼 접근하기
+
+진학사 계열의 403 이 IP 때문인지 헤드리스 탐지 때문인지는 겉으로 구분되지 않습니다.
+그래서 수집기는 실제 크롬과 같은 신호를 보내도록 맞춰 두었습니다 (`scripts/browser.mjs`).
+
+- `User-Agent` 와 `sec-ch-ua` 계열 클라이언트 힌트를 **서로 맞춰서** 전송 (어긋나면 오히려 걸립니다)
+- `Accept-Language: ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7`, `Upgrade-Insecure-Requests: 1`
+- 시간대 `Asia/Seoul`, `navigator.language`/`languages` 를 한국어로
+- `navigator.webdriver` 제거, `window.chrome` 존재, 플러그인 목록 채우기, `--disable-blink-features=AutomationControlled`
+
+**본인 브라우저의 UA 를 쓰려면** 크롬 콘솔에서 `navigator.userAgent` 를 복사해 `data/ua.txt` 로 저장하세요.
+`UA` 환경변수로 넘겨도 됩니다. 우선순위는 `UA` → `data/ua.txt` → 기본값이며,
+실제로 어떤 값이 쓰였는지는 로그 첫 줄과 `data/probe.json` 의 `ua` 에 남습니다.
+
+```bash
+echo 'UA 문자열 붙여넣기' > data/ua.txt
+git add data/ua.txt && git commit -m "chore: UA 지정" && git push
+```
+
+로컬에서 돌릴 때는 설치된 크롬을 그대로 쓰는 편이 가장 강합니다.
+
+```bash
+# macOS
+CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  ONLY_SRC=jinhak node scripts/scrape.mjs .
+
+# 창을 띄워서 확인하고 싶으면
+HEADFUL=1 CHROME_PATH="..." node scripts/probe.mjs .
+```
+
+그래도 러너에서 403 이 계속되면 IP 기반 차단이므로 아래 2단계로 넘어갑니다.
+
+### 2단계 — 진학사 85개교까지 원하면 (선택)
+
+진학사 계열은 국내 IP 에서만 열리므로, 그 부분만 본인 컴퓨터에서 돌려 push 합니다.
+파일은 대학별로 나뉘어 있어 Actions 결과와 자연스럽게 합쳐집니다.
+
+```bash
+# 한 번만 설치
+npm i playwright && npx playwright install chromium
+
+# 진학사 계열만 수집 (유웨이는 Actions 가 담당)
+ONLY_SRC=jinhak node scripts/scrape.mjs .
+git add data && git commit -m "chore(data): 진학사 계열 경쟁률" && git push
+```
+
+15분마다 자동으로 돌리려면 `crontab -e` 에 다음 한 줄을 넣습니다.
+
+```
+*/15 * * * * cd ~/susi-ratio && ONLY_SRC=jinhak /usr/local/bin/node scripts/scrape.mjs . && git add data && git commit -m "chore(data): 진학사 계열 경쟁률" && git push
+```
+
+`ONLY_SRC` 는 `jinhak` / `uway` / `jinhak,uway` 를 받습니다. 생략하면 둘 다 시도합니다.
+로컬에서 둘 다 돌릴 수 있으면 Actions 워크플로는 꺼도 됩니다.
+
+### 그 밖에 목록이 비는 경우
 
 수집기는 허브를 세 가지 방법으로 시도합니다.
 
@@ -79,57 +165,9 @@ data/probe.json                 마지막 접속 진단 결과
 2. 렌더된 HTML 전체를 정규식으로 파싱
 3. 원본 HTTP 응답(Next.js RSC 페이로드)을 정규식으로 파싱
 
-세 방법이 모두 100개 미만이면 `data/univs.json` 을 재사용하고, 그것도 없으면
-**`data/index.json` 을 건드리지 않고** 실패로 끝냅니다. 기존 데이터가 빈 파일로 덮이는 일은 없습니다.
-
-### 1) 어디서 막혔는지 확인
-
-`data/probe.json` 을 봅니다. 워크플로의 **접속 진단** 단계가 러너에서 세 호스트를 직접 열어보고
-상태코드·본문 크기·제목·차단 문구 여부를 남깁니다.
-
-| probe.json 결과 | 해석 | 할 일 |
-|---|---|---|
-| 세 호스트 모두 `status: 200`, `blocked: false` | 일시적 실패 | 워크플로 재실행 |
-| 허브만 실패/차단, 경쟁률 호스트는 200 | 허브만 막힘 | 아래 2) 로 목록을 심으면 끝 |
-| 경쟁률 호스트까지 실패/차단 | 러너 IP 자체가 막힘 | 아래 3) 으로 실행 위치를 옮겨야 함 |
-
-국내 입시 사이트는 해외 데이터센터 IP를 막는 경우가 있고, GitHub 러너는 미국 리전입니다.
-
-### 2) 대학 목록 직접 심기 (허브만 막힌 경우)
-
-가장 쉬운 방법 — 브라우저 콘솔:
-
-1. 크롬에서 [허브 페이지](https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727)를 열고 끝까지 스크롤
-2. F12 → Console 에 `scripts/seed-snippet.js` 내용을 전부 붙여넣고 Enter
-3. 다운로드된 `univs.json` 을 리포지토리의 `data/univs.json` 으로 넣고 push
-
-```bash
-git add data/univs.json && git commit -m "chore(data): 대학 목록 시드" && git push
-```
-
-허브 페이지를 HTML 로 저장해 두었다면 이 방법도 됩니다.
-
-```bash
-node scripts/seed-univs.mjs ~/Downloads/저장한파일.html
-```
-
-심어 두면 이후 수집기는 허브를 못 읽어도 이 목록으로 계속 수집합니다.
-
-### 3) 러너 IP 가 막힌 경우
-
-GitHub Actions 로는 수집이 불가능하므로 수집기를 국내에서 도는 곳으로 옮겨야 합니다.
-같은 스크립트를 그대로 쓰고, 결과만 리포지토리에 push 하면 페이지는 손댈 필요가 없습니다.
-
-```bash
-# 본인 맥/PC 에서 (한 번 설치)
-npm i playwright && npx playwright install chromium
-
-# 15분마다 실행되게 cron 등록 (crontab -e)
-*/15 * * * * cd ~/susi-ratio && node scripts/scrape.mjs . && \
-  git add data && git commit -m "chore(data): 경쟁률 갱신" && git push
-```
-
-이 경우 `.github/workflows/ratio.yml` 은 `Disable workflow` 로 꺼두면 됩니다.
+모두 100개 미만이면 `data/univs.json` 을 재사용하고, 그것도 없으면 **`data/index.json` 을 건드리지 않고**
+실패로 끝냅니다. 기존 데이터가 빈 파일로 덮이는 일은 없습니다.
+허브 페이지를 HTML 로 저장해 두었다면 `node scripts/seed-univs.mjs 저장한파일.html` 로도 목록을 만들 수 있습니다.
 
 ## 갱신 주기에 대해
 

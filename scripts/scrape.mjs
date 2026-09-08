@@ -1,10 +1,10 @@
 // 2027 수시 경쟁률 수집기 — GitHub Actions 에서 주기적으로 실행된다.
 // 진학사 허브 페이지에서 대학 목록을 읽고, 대학별 경쟁률 페이지를 같은 오리진 안에서 훑어
 // data/index.json 과 data/u/<id>.json 을 갱신한다.
-import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { launchBrowser, newContext, resolveUA } from './browser.mjs';
 
 // 기본값은 진학사 허브 페이지. 테스트할 때만 HUB 환경변수로 바꾼다.
 const HUB = process.env.HUB || 'https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727';
@@ -153,12 +153,24 @@ async function scrapeHub(page) {
   return { list, how: list === fromDom ? 'HTML' : 'DOM' };
 }
 
-async function collect(browser, targets) {
+// 진학사/유웨이 계열이 러너 IP 를 막을 때 내려주는 차단 페이지를 알아본다.
+const BLOCK_RE = /안전한 접속 확인|Just a moment|cf-browser-verification|Attention Required|Access Denied/i;
+
+async function collect(ctx, targets) {
   if (!targets.length) return [];
-  const page = await browser.newPage();
+  const page = await ctx.newPage();
   const out = [];
   try {
-    await page.goto(targets[0].url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const res = await page.goto(targets[0].url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    const status = res ? res.status() : 0;
+    const head = (await page.content()).slice(0, 4000);
+    if (status >= 400 || BLOCK_RE.test(head)) {
+      // 이 호스트는 통째로 막혔다. 85개를 하나씩 실패시키지 말고 한 번에 사유를 붙인다.
+      const why = '호스트 차단 (HTTP ' + status + (BLOCK_RE.test(head) ? ', 접속 확인 페이지' : '') + ')';
+      console.log('  ' + why + ' — ' + targets.length + '개 건너뜀');
+      await page.close();
+      return targets.map((t) => ({ id: t.id, ok: false, err: why, blockedHost: true, rows: [] }));
+    }
     await page.addScriptTag({ content: inPage });
     // 한 번에 너무 많이 돌리면 evaluate 가 타임아웃되므로 20개씩 끊는다.
     for (let i = 0; i < targets.length; i += 20) {
@@ -167,7 +179,7 @@ async function collect(browser, targets) {
       out.push(...res);
       console.log('  ' + Math.min(i + 20, targets.length) + '/' + targets.length);
     }
-  } finally { await page.close(); }
+  } finally { if (!page.isClosed()) await page.close(); }
   return out;
 }
 
@@ -202,13 +214,13 @@ function mergeUniv(meta, got, stamp) {
 }
 
 const run = async () => {
-  const launch = { args: ['--no-sandbox'] };
-  if (process.env.PW_CHROMIUM) launch.executablePath = process.env.PW_CHROMIUM; // 로컬 테스트용
-  const browser = await chromium.launch(launch);
+  const browser = await launchBrowser();
+  const CTX = await newContext(browser, ROOT);
+  console.log('UA: ' + resolveUA(ROOT));
   const stamp = nowKST();
   let list = [], hubError = null;
   try {
-    const page = await browser.newPage();
+    const page = await CTX.newPage();
     let how = '-';
     try { const r = await scrapeHub(page); list = r.list; how = r.how; }
     catch (e) { hubError = e.message; console.log('허브 수집 실패: ' + e.message); }
@@ -246,11 +258,28 @@ const run = async () => {
     const byHost = { jinhak: [], uway: [] };
     for (const m of metas) if (byHost[m.src]) byHost[m.src].push(m);
 
+    // 한 계열이 막혀도 다른 계열은 그대로 모은다. ONLY_SRC 로 한쪽만 돌릴 수도 있다.
+    const only = (process.env.ONLY_SRC || '').split(',').filter(Boolean);
     const results = new Map();
+    const hostStat = {};
     for (const src of ['jinhak', 'uway']) {
-      console.log(src + ' ' + byHost[src].length);
-      for (const r of await collect(browser, byHost[src])) results.set(r.id, r);
+      const tgt = byHost[src];
+      if (only.length && !only.includes(src)) {
+        console.log(src + ' ' + tgt.length + '개 — ONLY_SRC 로 건너뜀');
+        hostStat[src] = { total: tgt.length, skipped: true };
+        continue;
+      }
+      console.log(src + ' ' + tgt.length);
+      const rs = await collect(CTX, tgt);
+      for (const r of rs) results.set(r.id, r);
+      hostStat[src] = {
+        total: tgt.length,
+        ok: rs.filter((r) => r.rows.length).length,
+        blocked: rs.some((r) => r.blockedHost),
+        note: rs.length && rs[0].blockedHost ? rs[0].err : undefined,
+      };
     }
+    console.log('계열별: ' + JSON.stringify(hostStat));
 
     const univs = metas.map((m) => {
       const got = results.get(m.id);
@@ -279,7 +308,7 @@ const run = async () => {
       writeJSON(path.join(DATA, 'status.json'), {
         built: stamp, ok: false,
         reason: '대학 목록은 있었지만 경쟁률 페이지를 한 곳도 읽지 못했습니다.',
-        hubError, total: univs.length,
+        hubError, hostStat, total: univs.length,
         samples: univs.slice(0, 5).map((u) => ({ name: u.name, url: u.url, note: u.note })),
       });
       throw new Error('경쟁률 수집이 모두 실패해 중단합니다 (data/index.json 은 그대로 둡니다)');
@@ -288,7 +317,7 @@ const run = async () => {
     writeJSON(path.join(DATA, 'univs.json'), list);
     writeJSON(path.join(DATA, 'index.json'), { built: stamp, ok: okCount, total: univs.length, univs });
     writeJSON(path.join(DATA, 'status.json'), {
-      built: stamp, ok: true, hubError, how,
+      built: stamp, ok: true, hubError, how, hostStat,
       hubCount: list.length, collected: okCount, total: univs.length,
       failed: univs.filter((u) => !u.ok).map((u) => ({ name: u.name, src: u.src, note: u.note, stale: !!u.stale })),
     });
