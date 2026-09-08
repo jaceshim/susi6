@@ -1,36 +1,97 @@
 {
- "at": "2026-09-08T18:27:23",
+ "at": "2026-09-08T20:02:40",
  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
  "targets": [
   {
    "label": "허브(jinhak.com)",
    "url": "https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727",
    "status": 403,
+   "headers": {
+    "server": "cloudflare",
+    "cf-ray": "a37d74117afc2b03-SEA",
+    "cf-mitigated": "challenge",
+    "content-type": "text/html; charset=UTF-8"
+   },
    "bytes": 14639,
    "title": "안전한 접속 확인 | 진학사",
    "blocked": true,
+   "hasTable": false,
    "ratioLinks": 0,
-   "hasTable": false
+   "selfCleared": false,
+   "challenge": {
+    "scripts": [
+     "https://www.jinhak.com/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1?ray=a37d745f1bd72b03",
+     "https://challenges.cloudflare.com/turnstile/v0/g/330e41bb475c/api.js?onload=khCN8&render=explicit"
+    ],
+    "inlineScripts": 3,
+    "metaRefresh": "360",
+    "forms": 0,
+    "text": "JINHAK 고객센터 고객센터 안전한 접속 확인 진학사 서비스를 안전하게 이용하실 수 있도록 접속 환경을 확인하고 있습니다. 확인이 완료되면 요청하신 페이지로 자동 이동합니다. 잠시만 기다려 주세요. 호환되지 않는 브라우저 확장 프로그램 또는 네트워크 구성 브라우저 확장 프로그램 또는 네트워크 설정이 www.jinhak.com에서 요구하는 보안 확인 프로세스를 차단했습니다. 이를 해결하려면 다음 단계를 시도해 보십시오. 브라우"
+   },
+   "cookies": [
+    "cf_clearance",
+    "cf_chl_rc_ni"
+   ],
+   "retryAfterWait": {
+    "status": 403,
+    "blocked": true,
+    "hasTable": false,
+    "bytes": 14661
+   },
+   "verdict": "IP 기반 하드 차단으로 보임"
   },
   {
    "label": "진학사 경쟁률(addon.jinhakapply.com)",
    "url": "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio10030381.html",
    "status": 403,
+   "headers": {
+    "server": "cloudflare",
+    "cf-ray": "a37d752def7557bc-SEA",
+    "cf-mitigated": "challenge",
+    "content-type": "text/html; charset=UTF-8"
+   },
    "bytes": 14518,
    "title": "안전한 접속 확인 | 진학어플라이",
    "blocked": true,
+   "hasTable": false,
    "ratioLinks": 8,
-   "hasTable": false
+   "selfCleared": false,
+   "challenge": {
+    "scripts": [
+     "https://addon.jinhakapply.com/cdn-cgi/challenge-platform/h/g/orchestrate/chl_page/v1?ray=a37d757b186557bc",
+     "https://challenges.cloudflare.com/turnstile/v0/g/330e41bb475c/api.js?onload=khCN8&render=explicit"
+    ],
+    "inlineScripts": 3,
+    "metaRefresh": "360",
+    "forms": 0,
+    "text": "JINHAKAPPLY 고객센터 FAQ 안전한 접속 확인 진학어플라이 서비스를 안전하게 이용하실 수 있도록 접속 환경을 확인하고 있습니다. 확인이 완료되면 요청하신 페이지로 자동 이동합니다. 잠시만 기다려 주세요. 호환되지 않는 브라우저 확장 프로그램 또는 네트워크 구성 브라우저 확장 프로그램 또는 네트워크 설정이 addon.jinhakapply.com에서 요구하는 보안 확인 프로세스를 차단했습니다. 이를 해결하려면 다음 단계를"
+   },
+   "cookies": [
+    "cf_clearance",
+    "cf_chl_rc_ni"
+   ],
+   "retryAfterWait": {
+    "status": 403,
+    "blocked": true,
+    "hasTable": false,
+    "bytes": 14540
+   },
+   "verdict": "IP 기반 하드 차단으로 보임"
   },
   {
    "label": "유웨이 경쟁률(ratio.uwayapply.com)",
    "url": "https://ratio.uwayapply.com/Sl5KOnw5SmYlJjomSjdmVGY=",
    "status": 200,
+   "headers": {
+    "server": "Apache",
+    "content-type": "text/html; charset=euc-kr"
+   },
    "bytes": 375086,
    "title": "경희대학교 경/쟁/률/서/비/스",
    "blocked": false,
+   "hasTable": true,
    "ratioLinks": 4,
-   "hasTable": true
+   "verdict": "정상"
   }
  ]
 }
