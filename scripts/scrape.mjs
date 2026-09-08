@@ -4,6 +4,7 @@
 import { chromium } from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 // 기본값은 진학사 허브 페이지. 테스트할 때만 HUB 환경변수로 바꾼다.
 const HUB = process.env.HUB || 'https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727';
@@ -31,6 +32,40 @@ function classify(url) {
   return { src: 'univ', id: 'X' + Buffer.from(url).toString('hex').slice(0, 16) };
 }
 
+// 렌더된 DOM 이 비어 있을 때를 위한 2차 수단.
+// 허브는 Next.js 라 HTML 응답 안에 RSC 페이로드가 들어 있고, 거기에 경쟁률 URL 과 대학명이 그대로 담겨 있다.
+// 이스케이프(\/, /)와 HTML 엔티티를 풀고 URL 주변 텍스트에서 대학명·접수기간을 집는다.
+export function parseHubRaw(raw) {
+  const text = String(raw)
+    .replace(/\\u002[fF]/g, '/')
+    .replace(/\\\//g, '/')
+    .replace(/&#x2F;/gi, '/')
+    .replace(/&amp;/g, '&')
+    .replace(/\\"/g, '"');
+  const URL_RE = /https?:\/\/(?:addon\.jinhakapply\.com\/RatioV1\/RatioH\/Ratio\d+\.html|ratio\.uwayapply\.com\/[A-Za-z0-9+/]+={0,2})/g;
+  const NAME_RE = /([가-힣][가-힣A-Za-z0-9·]{1,20}(?:대학교|대학교대|대학|대))(\([^)]{1,12}\))?/g;
+  const PERIOD_RE = /(\d{1,2}\.\d{1,2}\s*~\s*\d{1,2}\.\d{1,2})/g;
+  const out = [], seen = new Set();
+  let m;
+  while ((m = URL_RE.exec(text))) {
+    const url = m[0];
+    if (seen.has(url)) continue;
+    seen.add(url);
+    const back = text.slice(Math.max(0, m.index - 800), m.index);
+    const names = [...back.matchAll(NAME_RE)];
+    const periods = [...back.matchAll(PERIOD_RE)];
+    const last = names[names.length - 1];
+    if (!last) continue;
+    out.push({
+      name: (last[1] + (last[2] || '')).trim(),
+      period: periods.length ? periods[periods.length - 1][1].replace(/\s/g, '') : '',
+      region: '',
+      url,
+    });
+  }
+  return out;
+}
+
 // 허브 페이지에서 대학 목록을 뽑는다.
 // 클래스 이름(.jh-row) 하나에 의존하면 진학사가 마크업을 바꿀 때 통째로 실패하므로,
 // 경쟁률 링크(anchor)를 기준으로 조상 요소를 거슬러 올라가며 대학명·접수기간을 찾는 방식을 기본으로 쓴다.
@@ -47,7 +82,7 @@ async function scrapeHub(page) {
     await page.waitForTimeout(4000);
   }
 
-  const list = await page.evaluate(({ re }) => {
+  let list = await page.evaluate(({ re }) => {
     const PERIOD = /(\d{1,2}\.\d{1,2}\s*~\s*\d{1,2}\.\d{1,2})/;
     const clean = (s) => (s || '').replace(/\s+/g, ' ').trim();
     const anchors = [...document.querySelectorAll('a[href]')]
@@ -102,7 +137,20 @@ async function scrapeHub(page) {
     return out.filter((x) => (seen.has(x.url) ? false : (seen.add(x.url), true)));
   }, { re: LINK_RE });
 
-  return list;
+  if (list.length >= LINK_MIN) return { list, how: 'DOM' };
+
+  // 1차(DOM)가 부실하면 렌더된 HTML → 원본 응답 순으로 정규식 파싱을 시도한다.
+  console.log('DOM 파싱 결과 ' + list.length + '개 — 원문 파싱으로 재시도');
+  const fromDom = parseHubRaw(await page.content());
+  if (fromDom.length > list.length) list = fromDom;
+  if (list.length < LINK_MIN) {
+    try {
+      const res = await page.request.get(HUB, { timeout: 60000 });
+      const fromRaw = parseHubRaw(await res.text());
+      if (fromRaw.length > list.length) return { list: fromRaw, how: 'RAW' };
+    } catch (e) { console.log('원본 응답 파싱 실패: ' + e.message); }
+  }
+  return { list, how: list === fromDom ? 'HTML' : 'DOM' };
 }
 
 async function collect(browser, targets) {
@@ -161,10 +209,12 @@ const run = async () => {
   let list = [], hubError = null;
   try {
     const page = await browser.newPage();
-    try { list = await scrapeHub(page); } catch (e) { hubError = e.message; console.log('허브 수집 실패: ' + e.message); }
+    let how = '-';
+    try { const r = await scrapeHub(page); list = r.list; how = r.how; }
+    catch (e) { hubError = e.message; console.log('허브 수집 실패: ' + e.message); }
     await page.close();
 
-    console.log('허브에서 읽은 대학 ' + list.length + '개');
+    console.log('허브에서 읽은 대학 ' + list.length + '개 (경로 ' + how + ')');
     if (list.length) console.log('  예: ' + list.slice(0, 3).map((u) => u.name + '/' + u.period + '/' + u.region).join(', '));
 
     // 허브가 부실하면 지난 성공 결과(대학 목록)를 재사용한다.
@@ -185,7 +235,7 @@ const run = async () => {
       writeJSON(path.join(DATA, 'status.json'), {
         built: stamp, ok: false,
         reason: '허브에서 대학 목록을 읽지 못했고 재사용할 목록도 없습니다.',
-        hubError, hub: HUB,
+        hubError, hub: HUB, how,
       });
       throw new Error('대학 목록이 비어 있어 중단합니다 (data/index.json 은 그대로 둡니다)');
     }
@@ -238,7 +288,7 @@ const run = async () => {
     writeJSON(path.join(DATA, 'univs.json'), list);
     writeJSON(path.join(DATA, 'index.json'), { built: stamp, ok: okCount, total: univs.length, univs });
     writeJSON(path.join(DATA, 'status.json'), {
-      built: stamp, ok: true, hubError,
+      built: stamp, ok: true, hubError, how,
       hubCount: list.length, collected: okCount, total: univs.length,
       failed: univs.filter((u) => !u.ok).map((u) => ({ name: u.name, src: u.src, note: u.note, stale: !!u.stale })),
     });
@@ -246,4 +296,6 @@ const run = async () => {
   } finally { await browser.close(); }
 };
 
-run().catch((e) => { console.error(e); process.exit(1); });
+// 이 파일을 직접 실행할 때만 수집을 돌린다 (테스트에서 parseHubRaw 만 import 할 수 있게).
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) run().catch((e) => { console.error(e); process.exit(1); });

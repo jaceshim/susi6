@@ -23,8 +23,10 @@ index.html                      대시보드 (스타일 내장)
 app.js                          대시보드 로직
 data/index.json                 대학 목록 + 대학별 요약 (수집기가 생성)
 data/u/<대학ID>.json            모집단위 목록 + 시간별 스냅샷 (수집기가 생성)
+data/status.json                마지막 수집의 성공/실패 진단 (수집기가 생성)
 scripts/scrape.mjs              수집기 (Playwright)
 scripts/parse-in-page.js        브라우저 안에서 도는 표 파서
+scripts/seed-univs.mjs          허브를 못 읽을 때 대학 목록을 수동으로 심는 비상 수단
 .github/workflows/ratio.yml     15분마다 수집 → 커밋
 ```
 
@@ -64,6 +66,30 @@ scripts/parse-in-page.js        브라우저 안에서 도는 표 파서
 > 비공개 저장소는 GitHub Pages 가 유료 플랜에서만 동작합니다. 무료 계정이면 저장소를 공개로 둬야 하고,
 > 그 경우 페이지와 `data/*.json` 은 URL 을 아는 누구나 볼 수 있습니다. 담은 목록은 브라우저에만
 > 저장되므로 공유되지 않습니다.
+
+## 대학 목록이 비어 있을 때
+
+`data/status.json` 을 먼저 봅니다. `reason` 과 `hubError`, 그리고 `how`(허브를 어떤 경로로 읽었는지:
+`DOM` / `HTML` / `RAW`) 가 적혀 있고, 같은 내용이 페이지의 "데이터 없음" 화면에도 표시됩니다.
+Actions 로그에서는 `허브에서 읽은 대학 N개 (경로 …)` 줄을 확인하세요.
+
+수집기는 허브를 세 가지 방법으로 시도합니다.
+
+1. 렌더된 DOM 에서 경쟁률 링크를 찾아 조상 요소에서 대학명·접수기간을 읽음
+2. 렌더된 HTML 전체를 정규식으로 파싱
+3. 원본 HTTP 응답(Next.js RSC 페이로드)을 정규식으로 파싱
+
+세 방법이 모두 100개 미만이면 지난 성공 때 저장한 `data/univs.json` 을 재사용하고,
+그것도 없으면 **`data/index.json` 을 건드리지 않고** 실패로 끝냅니다(잡이 빨갛게 뜸).
+기존에 잘 나오던 데이터가 빈 파일로 덮여 쓰이는 일은 없습니다.
+
+허브 자체가 러너에서 계속 막히면 목록을 직접 심을 수 있습니다.
+
+```bash
+# 브라우저에서 허브 페이지를 열어 HTML 로 저장한 뒤
+node scripts/seed-univs.mjs ~/Downloads/저장한파일.html   # data/univs.json 생성
+git add data/univs.json && git commit -m "chore(data): 대학 목록 시드" && git push
+```
 
 ## 갱신 주기에 대해
 
