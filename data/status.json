@@ -1,1 +1,1 @@
-{"built":null,"ok":false,"reason":"아직 수집기가 실행되지 않았습니다. GitHub Actions 의 \"수시 경쟁률 수집\" 워크플로를 한 번 실행하세요."}
+{"built":"2026-09-08T17:54:09","ok":false,"reason":"허브에서 대학 목록을 읽지 못했고 재사용할 목록도 없습니다.","hubError":null,"hub":"https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727","how":"DOM"}

@@ -1,0 +1,36 @@
+{
+ "at": "2026-09-08T17:54:09",
+ "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36",
+ "targets": [
+  {
+   "label": "허브(jinhak.com)",
+   "url": "https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727",
+   "status": 403,
+   "bytes": 14639,
+   "title": "안전한 접속 확인 | 진학사",
+   "blocked": true,
+   "ratioLinks": 0,
+   "hasTable": false
+  },
+  {
+   "label": "진학사 경쟁률(addon.jinhakapply.com)",
+   "url": "https://addon.jinhakapply.com/RatioV1/RatioH/Ratio10030381.html",
+   "status": 403,
+   "bytes": 14518,
+   "title": "안전한 접속 확인 | 진학어플라이",
+   "blocked": true,
+   "ratioLinks": 8,
+   "hasTable": false
+  },
+  {
+   "label": "유웨이 경쟁률(ratio.uwayapply.com)",
+   "url": "https://ratio.uwayapply.com/Sl5KOnw5SmYlJjomSjdmVGY=",
+   "status": 200,
+   "bytes": 375086,
+   "title": "경희대학교 경/쟁/률/서/비/스",
+   "blocked": false,
+   "ratioLinks": 4,
+   "hasTable": true
+  }
+ ]
+}
