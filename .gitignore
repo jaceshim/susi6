@@ -1,0 +1,30 @@
+# ─────────────────────────────────────────────────────────────
+# 실손케어 — 저장소 전역 무시 목록
+# Python 빌드 산출물·가상환경은 backend/.gitignore 가 담당한다.
+# ─────────────────────────────────────────────────────────────
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE · 빌드 도구 부산물
+# .gradle 은 IntelliJ 가 디렉터리를 열 때 만든다. 파이썬 프로젝트라 Gradle 을 쓰지
+# 않지만 캐시는 남으므로 막는다.
+.idea/
+.vscode/
+*.iml
+.gradle/
+*.swp
+
+# 비밀값 — 절대 커밋하지 않는다 ([BE] §13.1)
+# FCM 서비스 계정 JSON · APNs .p8 인증키는 K8s Secret 으로만 주입한다(Q-43).
+.env
+.env.*
+!.env.example
+*.p8
+*-service-account*.json
+
+# 로그·임시
+*.log
+.tmp/
+
