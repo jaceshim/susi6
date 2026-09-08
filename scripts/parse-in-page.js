@@ -1,6 +1,14 @@
 // 브라우저 컨텍스트에서 실행되는 수집 루틴.
 // 같은 오리진 안에서 fetch 하므로 CORS 를 타지 않고, 문서 선언 charset(EUC-KR 포함)을 직접 처리한다.
-window.__collect = async function (targets) {
+//
+// 요청 간격을 넉넉히 두는 이유: 진학사 계열은 짧은 시간에 요청이 몰리면
+// "안전한 접속 확인" 페이지를 내려준다. 사람이 브라우저로 훑는 속도에 가깝게 맞춘다.
+window.__collect = async function (targets, opts) {
+  const o = opts || {};
+  const gap = o.gap == null ? 800 : o.gap;      // 기본 요청 간격(ms)
+  const jitter = o.jitter == null ? 400 : o.jitter;
+  const BLOCK = /안전한 접속 확인|Just a moment|cf-browser-verification|Attention Required|Access Denied/i;
+
   const toInt = s => { const t = String(s).replace(/[,\s]/g, ''); return /^\d+$/.test(t) ? +t : null };
 
   function labelOf(t) {
@@ -56,28 +64,56 @@ window.__collect = async function (targets) {
     return m[1] + '-' + p(m[2]) + '-' + p(m[3]) + 'T' + p(h) + ':' + p(m[6]);
   }
 
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
   async function getDoc(url) {
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const r = await fetch(url, { cache: 'no-store', credentials: 'include' });
     const buf = await r.arrayBuffer();
     let s = new TextDecoder('utf-8').decode(buf);
     const m = s.match(/charset\s*=\s*["']?([\w-]+)/i);
     if (m && !/utf-?8/i.test(m[1])) {
       try { s = new TextDecoder(m[1]).decode(buf) } catch (e) { s = new TextDecoder('euc-kr').decode(buf) }
     }
+    if (!r.ok) { const e = new Error('HTTP ' + r.status); e.status = r.status; e.body = s; throw e }
+    if (BLOCK.test(s.slice(0, 4000))) { const e = new Error('BLOCKED'); e.blocked = true; throw e }
     return new DOMParser().parseFromString(s, 'text/html');
   }
 
+  // 한 번 실패하면 조금 쉬고 두 번까지 더 시도한다 (일시적 차단이면 대개 풀린다).
+  async function getWithRetry(url) {
+    let last = null;
+    for (let a = 0; a < 3; a++) {
+      try { return await getDoc(url) }
+      catch (e) {
+        last = e;
+        if (!(e.blocked || e.status === 403 || e.status === 429)) break;
+        await sleep(4000 * (a + 1));
+      }
+    }
+    throw last;
+  }
+
   const out = [];
+  let blockedStreak = 0;
   for (const t of targets) {
     try {
-      const doc = await getDoc(t.url);
+      const doc = await getWithRetry(t.url);
       const rows = parseDoc(doc);
       out.push({ id: t.id, ok: rows.length > 0, asof: asOf(doc), title: (doc.title || '').trim(), rows });
+      blockedStreak = 0;
     } catch (e) {
-      out.push({ id: t.id, ok: false, err: String(e && e.message || e), rows: [] });
+      const blocked = !!(e.blocked || e.status === 403 || e.status === 429);
+      out.push({ id: t.id, ok: false, err: String(e && e.message || e), blocked, rows: [] });
+      if (blocked) blockedStreak++;
+      // 연속으로 막히면 더 두드리지 않고 남은 대상은 미수집으로 남긴다.
+      if (blockedStreak >= 3) {
+        for (const rest of targets.slice(targets.indexOf(t) + 1)) {
+          out.push({ id: rest.id, ok: false, err: '연속 차단으로 중단', blocked: true, rows: [] });
+        }
+        break;
+      }
     }
-    await new Promise(r => setTimeout(r, 120));
+    await sleep(gap + Math.random() * jitter);
   }
   return out;
 };

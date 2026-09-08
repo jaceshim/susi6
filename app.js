@@ -104,24 +104,25 @@ async function fetchUniv(id) {
   return d;
 }
 
-async function refresh(quiet) {
+// 갱신은 자동으로만 돈다 (수집 자체는 GitHub Actions 가 하므로 페이지에 갱신 버튼을 두지 않는다).
+// 첫 로드는 조용히, 이후 자동 갱신에서 새 수집분이 들어왔을 때만 알린다.
+async function refresh(first) {
   if (loading) return;
   loading = true;
-  $('refresh').disabled = true;
-  $('hrefresh').disabled = true;
+  const before = IDX && IDX.built;
   try {
     await Promise.all([fetchIndex(), fetchStatus()]);
     const ids = [...new Set(S.watch.map((w) => w.u))];
     await Promise.all(ids.map((id) => fetchUniv(id).catch(() => null)));
     render();
-    if (!quiet) toast('경쟁률을 다시 불러왔습니다 · 수집 ' + shortTime(IDX.built));
+    if (!first && IDX && IDX.built && IDX.built !== before) {
+      toast('새 수집분 반영 · ' + shortTime(IDX.built));
+    }
   } catch (e) {
-    if (!quiet) toast('불러오기 실패: ' + e.message, 4000);
+    if (!first) toast('불러오기 실패: ' + e.message, 4000);
     renderNoData(e);
   } finally {
     loading = false;
-    $('refresh').disabled = false;
-    $('hrefresh').disabled = false;
     scheduleNext();
   }
 }
@@ -131,7 +132,7 @@ function scheduleNext() {
   clearInterval(tick);
   if (!S.auto) { nextAt = 0; paintHead(); return; }
   nextAt = Date.now() + S.period * 1000;
-  timer = setTimeout(() => refresh(true), S.period * 1000);
+  timer = setTimeout(() => refresh(false), S.period * 1000);
   tick = setInterval(paintHead, 1000);
   paintHead();
 }
@@ -140,16 +141,22 @@ function scheduleNext() {
 function paintHead() {
   const h = $('hstat');
   if (!h) return;
-  const left = nextAt ? Math.max(0, Math.round((nextAt - Date.now()) / 1000)) : null;
-  const mm = left == null ? '' : Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0');
+  // 상단에는 '마지막 수집 시각' 과 '접수 마감' 만 둔다.
+  // 페이지에서 수집을 다시 돌릴 수는 없으므로(수집은 GitHub Actions 가 한다) 상단 갱신 버튼은 두지 않는다.
   const parts = [];
-  parts.push('<div class="tl' + (IDX ? ' live' : '') + '"><small>수집 시각</small><b>' +
+  parts.push('<div class="tl' + (IDX ? ' live' : '') + '"><small>마지막 수집</small><b>' +
     (IDX ? '<span class="dotlive"></span>' + esc(shortTime(IDX.built)) : '데이터 없음') + '</b></div>');
-  parts.push('<div class="tl"><small>자동 갱신</small><b>' +
-    (S.auto ? (mm ? esc(mm) + ' 후' : '대기') : '꺼짐') + '</b></div>');
   const per = S.watch.length ? (uOf(S.watch[0].u) || {}).period : '9.7~9.11';
   parts.push('<div class="tl hot"><small>접수 마감</small><b>' + esc(ddText(per) || '9.11') + '</b></div>');
   h.innerHTML = parts.join('');
+
+  // 다음 불러오기까지 남은 시간은 좌측 자동 갱신 섹션에 표시한다.
+  const ni = $('nextin');
+  if (ni) {
+    const left = nextAt ? Math.max(0, Math.round((nextAt - Date.now()) / 1000)) : null;
+    ni.textContent = !S.auto ? '꺼짐'
+      : (left == null ? '대기' : Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') + ' 후');
+  }
 }
 
 const uOf = (id) => (IDX && IDX.univs ? IDX.univs.find((u) => u.id === id) : null);
@@ -316,12 +323,12 @@ function onJungPick() {
 
 function addWatch() {
   if (!selUniv) return;
-  if (S.watch.length >= MAXW) { toast('최대 ' + MAXW + '개까지만 담을 수 있습니다.'); return; }
+  if (S.watch.length >= MAXW) { toast('최대 ' + MAXW + '개까지만 추가할 수 있습니다.'); return; }
   const i = +$('dsel').value;
   const u = selUniv.units[i];
   if (!u) return;
   const w = { u: selUniv.id, j: u.j, c: u.c, l: u.l, d: u.u };
-  if (S.watch.some((x) => x.u === w.u && watchKey(x) === watchKey(w))) { toast('이미 담긴 모집단위입니다.'); return; }
+  if (S.watch.some((x) => x.u === w.u && watchKey(x) === watchKey(w))) { toast('이미 추가한 모집단위입니다.'); return; }
   S.watch.push(w);
   save();
   render();
@@ -411,11 +418,10 @@ function render() {
   if (S.sort === 'delta') order.sort((a, b) => (b.r && b.r.delta || 0) - (a.r && a.r.delta || 0));
 
   const html = [];
-  html.push(summaryHTML(rows));
-  html.push('<h2 class="sec">담은 모집단위 <small>' + S.watch.length + '개' +
-    (S.sort === 'add' ? '' : ' · 정렬 적용') + '</small></h2>');
+  html.push('<h2 class="sec">선택한 대학의 경쟁률 <small>' + S.watch.length + '개 · 대학 ' +
+    new Set(S.watch.map((w) => w.u)).size + '곳' + (S.sort === 'add' ? '' : ' · 정렬 적용') + '</small></h2>');
   if (!S.watch.length) {
-    html.push('<div class="empty"><b>아직 담은 모집단위가 없습니다.</b><br>왼쪽에서 대학 → 전형 → 모집단위를 골라 담아주세요.<br>' +
+    html.push('<div class="empty"><b>아직 선택한 대학이 없습니다.</b><br>왼쪽에서 대학 → 전형 → 모집단위를 골라 추가하세요.<br>' +
       '수집 성공 ' + (IDX.ok || 0) + ' / ' + (IDX.total || 0) + '개 대학</div>');
   } else {
     html.push('<div class="cards">' + order.map((o) => cardHTML(o)).join('') + '</div>');
@@ -429,20 +435,6 @@ function render() {
   if (q) q.addEventListener('input', filterTable);
   paintFoot();
   if (window.__hints) window.__hints();
-}
-
-function summaryHTML(rows) {
-  const rs = rows.map((o) => o.r).filter((r) => r && r.ratio != null);
-  const avg = rs.length ? rs.reduce((s, r) => s + r.ratio, 0) / rs.length : null;
-  const top = rs.slice().sort((a, b) => b.ratio - a.ratio)[0];
-  const bot = rs.slice().sort((a, b) => a.ratio - b.ratio)[0];
-  const ats = rows.map((o) => o.r && o.r.at).filter(Boolean).sort();
-  return '<div class="summary">' +
-    '<div class="stat"><small>담은 모집단위</small><b>' + S.watch.length + '<small style="font-size:13px;color:var(--ink-3)"> / ' + MAXW + '</small></b><i>대학 ' + new Set(S.watch.map((w) => w.u)).size + '곳</i></div>' +
-    '<div class="stat"><small>평균 경쟁률</small><b>' + fmtRatio(avg) + '</b><i>' + (rs.length ? rs.length + '개 집계' : '집계 대기') + '</i></div>' +
-    '<div class="stat"><small>최고 경쟁률</small><b>' + (top ? fmtRatio(top.ratio) : '—') + '</b><i>' + esc(top ? top.unit.u : '—') + '</i></div>' +
-    '<div class="stat"><small>최저 경쟁률</small><b>' + (bot ? fmtRatio(bot.ratio) : '—') + '</b><i>' + esc(bot ? bot.unit.u : '—') + '</i></div>' +
-    '</div>';
 }
 
 function cardHTML(o) {
@@ -513,7 +505,7 @@ function tableHTML() {
     '<td class="num">' + nfmt(r.q) + '</td><td class="num">' + nfmt(r.a) + '</td>' +
     '<td class="num">' + fmtRatio(r.r) + '</td>' +
     '<td class="num" style="color:' + (r.d > 0 ? 'var(--up)' : 'var(--ink-3)') + '">' + (r.d == null ? '—' : (r.d > 0 ? '+' + r.d : r.d)) + '</td></tr>').join('');
-  return '<h2 class="sec">담은 대학의 전체 모집단위 <small>' + rows.length + '행 · ★ 는 담은 항목</small></h2>' +
+  return '<h2 class="sec">선택한 대학의 전체 경쟁률 <small>' + rows.length + '행 · ★ 는 선택한 모집단위</small></h2>' +
     '<div class="tablewrap"><div class="tabbar"><input id="tq" type="search" placeholder="대학·전형·학과 검색" aria-label="표 검색"><span class="count" id="tcount">' + rows.length + '행</span></div>' +
     '<div class="scroll"><table><thead><tr><th>대학</th><th>전형</th><th>캠퍼스·단대</th><th>모집단위</th>' +
     '<th class="num">모집</th><th class="num">지원</th><th class="num">경쟁률</th><th class="num">직전 대비</th></tr></thead><tbody>' + body + '</tbody></table></div></div>';
@@ -558,7 +550,7 @@ function noteHTML() {
 function paintPanel() {
   const wl = $('wlist');
   if (!S.watch.length) {
-    wl.innerHTML = '<div class="help">담은 항목이 없습니다.</div>';
+    wl.innerHTML = '<div class="help">선택한 대학이 없습니다.</div>';
   } else {
     wl.innerHTML = S.watch.map((w, n) => {
       const u = uOf(w.u) || {};
@@ -661,11 +653,9 @@ function boot() {
   initCombo();
   $('jsel').addEventListener('change', onJungPick);
   $('addbtn').addEventListener('click', addWatch);
-  $('clearw').addEventListener('click', () => { S.watch = []; save(); render(); toast('목록을 비웠습니다.'); });
-  $('refresh').addEventListener('click', () => refresh(false));
-  $('hrefresh').addEventListener('click', () => refresh(false));
+  $('clearw').addEventListener('click', () => { S.watch = []; save(); render(); toast('선택한 대학 목록을 비웠습니다.'); });
   $('reset').addEventListener('click', () => {
-    if (!confirm('담은 목록과 갱신 설정을 초기화할까요?')) return;
+    if (!confirm('선택한 대학 목록과 갱신 설정을 초기화할까요?')) return;
     S = { watch: [], auto: true, period: 300, sort: 'add' };
     save();
     syncSeg();
@@ -683,7 +673,7 @@ function boot() {
   syncSeg();
   initScrollHints();
   render();
-  refresh(true);
+  refresh(true);   // 첫 로드
 }
 
 function syncSeg() {

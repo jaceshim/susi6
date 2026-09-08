@@ -4,7 +4,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { launchBrowser, newContext, resolveUA } from './browser.mjs';
+import { launchBrowser, newContext, resolveUA, saveState } from './browser.mjs';
 
 // 기본값은 진학사 허브 페이지. 테스트할 때만 HUB 환경변수로 바꾼다.
 const HUB = process.env.HUB || 'https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727';
@@ -70,7 +70,11 @@ export function parseHubRaw(raw) {
 // 클래스 이름(.jh-row) 하나에 의존하면 진학사가 마크업을 바꿀 때 통째로 실패하므로,
 // 경쟁률 링크(anchor)를 기준으로 조상 요소를 거슬러 올라가며 대학명·접수기간을 찾는 방식을 기본으로 쓴다.
 async function scrapeHub(page) {
-  await page.goto(HUB, { waitUntil: 'load', timeout: 90000 });
+  const first = await openPage(page, HUB);
+  if (first.err) throw new Error(first.err);
+  if (first.status >= 400 || BLOCK_RE.test(first.html.slice(0, 4000))) {
+    throw new Error('허브 접근 거부 (HTTP ' + first.status + ')');
+  }
   // 하이드레이션 + 지연 렌더를 기다린다. 링크가 100개 넘게 붙으면 끝난 것으로 본다.
   try {
     await page.waitForFunction(
@@ -156,37 +160,86 @@ async function scrapeHub(page) {
 // 진학사/유웨이 계열이 러너 IP 를 막을 때 내려주는 차단 페이지를 알아본다.
 const BLOCK_RE = /안전한 접속 확인|Just a moment|cf-browser-verification|Attention Required|Access Denied/i;
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * 페이지를 열고, "안전한 접속 확인" 같은 인터스티셜이 나오면 통과를 기다린다.
+ * 이 페이지는 하드 차단이 아니라 JS 챌린지일 수 있어서, 곧바로 판정하면 정상 접근도 차단으로 오인한다.
+ * domcontentloaded 직후가 아니라 챌린지가 걷힐 시간을 준 뒤에 본문을 본다.
+ */
+async function openPage(page, url, tries) {
+  const N = tries == null ? 3 : tries;
+  let last = { status: 0, html: '', err: null };
+  for (let a = 0; a < N; a++) {
+    try {
+      const res = await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      let status = res ? res.status() : 0;
+      let html = await page.content();
+
+      if (BLOCK_RE.test(html.slice(0, 4000))) {
+        // 챌린지가 스스로 걷히는지 최대 25초 기다린다 (쿠키 발급 후 재이동하는 형태가 흔하다).
+        try {
+          await page.waitForFunction(
+            (re) => !new RegExp(re, 'i').test(document.documentElement.innerHTML.slice(0, 4000)),
+            BLOCK_RE.source, { timeout: 12000 });
+          html = await page.content();
+          status = 200;
+          console.log('    인터스티셜 통과');
+        } catch (e) { /* 안 걷히면 아래에서 재시도 */ }
+      }
+      last = { status, html, err: null };
+      if (status < 400 && !BLOCK_RE.test(html.slice(0, 4000))) return last;
+    } catch (e) {
+      last = { status: 0, html: '', err: String(e.message).split('\n')[0].slice(0, 120) };
+    }
+    if (a < N - 1) {
+      const wait = 5000 * (a + 1);
+      console.log('    재시도 ' + (a + 1) + '/' + (N - 1) + ' — ' + (wait / 1000) + '초 대기');
+      await sleep(wait);
+    }
+  }
+  return last;
+}
+
 async function collect(ctx, targets) {
   if (!targets.length) return [];
   const page = await ctx.newPage();
   const out = [];
   try {
-    // 첫 요청으로 이 호스트가 살아 있는지 본다.
-    // 4xx 응답뿐 아니라 예외(네트워크 오류)도 '호스트 불가'로 처리해야 다른 계열 수집이 이어진다.
-    let status = 0, head = '', navErr = null;
-    try {
-      const res = await page.goto(targets[0].url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-      status = res ? res.status() : 0;
-      head = (await page.content()).slice(0, 4000);
-    } catch (e) {
-      navErr = String(e.message).split('\n')[0].slice(0, 120);
-    }
-    if (navErr || status >= 400 || BLOCK_RE.test(head)) {
-      // 이 호스트는 통째로 막혔다. 85개를 하나씩 실패시키지 말고 한 번에 사유를 붙인다.
-      const why = navErr
-        ? '호스트 접속 실패 (' + navErr + ')'
-        : '호스트 차단 (HTTP ' + status + (BLOCK_RE.test(head) ? ', 접속 확인 페이지' : '') + ')';
+    // 첫 요청으로 이 호스트가 살아 있는지 본다. 인터스티셜·일시 차단은 재시도로 넘긴다.
+    const first = await openPage(page, targets[0].url);
+    const bad = first.err || first.status >= 400 || BLOCK_RE.test(first.html.slice(0, 4000));
+    if (bad) {
+      const why = first.err
+        ? '호스트 접속 실패 (' + first.err + ')'
+        : '접근 거부 (HTTP ' + first.status +
+          (BLOCK_RE.test(first.html.slice(0, 4000)) ? ', 접속 확인 페이지가 걷히지 않음' : '') + ')';
       console.log('  ' + why + ' — ' + targets.length + '개 건너뜀');
       await page.close();
       return targets.map((t) => ({ id: t.id, ok: false, err: why, blockedHost: true, rows: [] }));
     }
+
     await page.addScriptTag({ content: inPage });
-    // 한 번에 너무 많이 돌리면 evaluate 가 타임아웃되므로 20개씩 끊는다.
-    for (let i = 0; i < targets.length; i += 20) {
-      const chunk = targets.slice(i, i + 20).map((t) => ({ id: t.id, url: t.url }));
-      const res = await page.evaluate((t) => window.__collect(t), chunk);
+    // 사람이 훑는 속도에 가깝게. 한 번에 많이 돌리면 evaluate 가 타임아웃되므로 10개씩 끊는다.
+    const GAP = +(process.env.GAP_MS || 800);
+    const CHUNK = +(process.env.CHUNK || 10);
+    for (let i = 0; i < targets.length; i += CHUNK) {
+      const chunk = targets.slice(i, i + CHUNK).map((t) => ({ id: t.id, url: t.url }));
+      const res = await page.evaluate(
+        ({ t, o }) => window.__collect(t, o),
+        { t: chunk, o: { gap: GAP, jitter: 400 } });
       out.push(...res);
-      console.log('  ' + Math.min(i + 20, targets.length) + '/' + targets.length);
+      const okN = out.filter((r) => r.rows.length).length;
+      console.log('  ' + Math.min(i + CHUNK, targets.length) + '/' + targets.length + ' (성공 ' + okN + ')');
+      // 도중에 차단이 시작되면 남은 대상은 더 두드리지 않는다.
+      if (res.length && res.every((r) => r.blocked)) {
+        console.log('  차단이 감지되어 남은 ' + (targets.length - i - chunk.length) + '개는 건너뜀');
+        for (const rest of targets.slice(i + CHUNK)) {
+          out.push({ id: rest.id, ok: false, err: '차단 감지로 중단', blockedHost: true, rows: [] });
+        }
+        break;
+      }
+      await sleep(1200);
     }
   } finally { if (!page.isClosed()) await page.close(); }
   return out;
@@ -330,6 +383,7 @@ const run = async () => {
       hubCount: list.length, collected: okCount, total: univs.length,
       failed: univs.filter((u) => !u.ok).map((u) => ({ name: u.name, src: u.src, note: u.note, stale: !!u.stale })),
     });
+    await saveState(CTX, ROOT);   // 통과한 쿠키를 다음 실행에서 재사용
     console.log('완료: 성공 ' + okCount + ' / ' + univs.length);
   } finally { await browser.close(); }
 };

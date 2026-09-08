@@ -47,9 +47,24 @@ export async function launchBrowser() {
   return await chromium.launch(launch);
 }
 
+// 챌린지를 통과하면 쿠키가 발급된다. 그 쿠키를 실행 사이에 재사용하면
+// 매번 처음부터 확인 페이지를 받지 않는다. (리포지토리에 커밋하지 않는 캐시 경로)
+function statePath(root) { return path.resolve(root, '.cache/state.json'); }
+
+export async function saveState(ctx, root = '.') {
+  try {
+    const p = statePath(root);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    await ctx.storageState({ path: p });
+  } catch (e) { /* 저장 실패는 무시 — 다음 실행에서 다시 챌린지를 받으면 된다 */ }
+}
+
 export async function newContext(browser, root = '.') {
   const ua = resolveUA(root);
+  let storageState;
+  try { if (fs.existsSync(statePath(root))) storageState = statePath(root); } catch (e) {}
   const ctx = await browser.newContext({
+    storageState,
     userAgent: ua,
     // locale 을 지정하면 Accept-Language 가 'ko-KR' 한 값으로 고정돼 실제 크롬과 달라지므로
     // 여기서는 지정하지 않고, 아래에서 헤더를 직접 넣고 navigator.language 는 init script 로 맞춘다.
