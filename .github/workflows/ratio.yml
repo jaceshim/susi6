@@ -1,0 +1,47 @@
+name: 수시 경쟁률 수집
+
+on:
+  schedule:
+    # UTC 기준. 15분마다 (KST 무관하게 상시). 접수기간이 끝나면 이 워크플로를 끄면 됩니다.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ratio-scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Playwright 설치
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm i -D playwright@1.47.2
+          npx playwright install --with-deps chromium
+
+      - name: 경쟁률 수집
+        run: node scripts/scrape.mjs .
+
+      - name: 변경분 커밋
+        run: |
+          git config user.name  "ratio-bot"
+          git config user.email "ratio-bot@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then
+            echo "변경 없음"
+          else
+            git commit -m "chore(data): 경쟁률 갱신 $(TZ=Asia/Seoul date '+%Y-%m-%d %H:%M KST')"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
+            git push
+          fi

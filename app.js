@@ -256,10 +256,21 @@ function sparkline(series, q) {
 
 /* ---------- 렌더 ---------- */
 function renderNoData(err) {
-  $('results').innerHTML = '<div class="empty"><b>경쟁률 데이터를 아직 읽을 수 없습니다.</b><br>' +
-    'GitHub Actions 의 <b>수시 경쟁률 수집</b> 워크플로를 한 번 실행하면 <code>data/index.json</code> 이 만들어집니다.' +
+  $('results').innerHTML = '<div class="empty" id="nodata"><b>경쟁률 데이터를 아직 읽을 수 없습니다.</b><br>' +
+    'GitHub Actions 의 <b>수시 경쟁률 수집</b> 워크플로를 한 번 실행하면 <code>data/index.json</code> 이 채워집니다.' +
     (err ? '<br><span style="font-size:12px">(' + esc(err.message) + ')</span>' : '') + '</div>';
   paintFoot();
+  // 수집기가 남긴 진단 파일이 있으면 실패 이유를 그대로 보여준다.
+  getJSON('data/status.json').then((s) => {
+    const box = $('nodata');
+    if (!box || !s) return;
+    box.innerHTML += '<div style="margin-top:14px;padding:10px 12px;border:1px solid var(--line);border-radius:8px;text-align:left;font-size:12.5px;color:var(--ink-2)">' +
+      '<b>수집기 진단</b> (' + esc(s.built || '') + ')<br>' +
+      (s.reason ? esc(s.reason) + '<br>' : '') +
+      (s.hubError ? '허브 오류: ' + esc(s.hubError) + '<br>' : '') +
+      (s.hubCount != null ? '허브에서 읽은 대학 ' + s.hubCount + '개 · 수집 성공 ' + (s.collected || 0) + '개' : '') +
+      '</div>';
+  }).catch(() => {});
 }
 
 function render() {
