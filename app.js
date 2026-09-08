@@ -154,41 +154,152 @@ function paintHead() {
 
 const uOf = (id) => (IDX && IDX.univs ? IDX.univs.find((u) => u.id === id) : null);
 
-/* ---------- 선택 UI ---------- */
-function fillUnivList() {
-  const dl = $('ulist');
-  if (!IDX || !IDX.univs) { dl.innerHTML = ''; return; }
-  dl.innerHTML = IDX.univs.filter((u) => u.ok || u.stale)
-    .map((u) => '<option value="' + esc(u.name) + '">' + esc(u.region) + ' · 모집단위 ' + (u.units || 0) + '</option>').join('');
+/* ---------- 선택 UI (대학 콤보박스) ---------- */
+// datalist 는 한글 IME 조합 중에 후보를 갱신하지 않아 "가톨" 처럼 조합 중인 값으로는
+// 아무것도 뜨지 않는다. 그래서 직접 만든 목록으로 바꾸고 초성 검색까지 지원한다.
+const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+const chosung = (s) => [...String(s)].map((ch) => {
+  const c = ch.charCodeAt(0) - 0xAC00;
+  return (c >= 0 && c < 11172) ? CHO[Math.floor(c / 588)] : ch;
+}).join('');
+const norm = (s) => String(s).replace(/\s+/g, '').toLowerCase();
+const isCho = (s) => /^[ㄱ-ㅎ]+$/.test(String(s).replace(/\s+/g, ''));
+
+/** 수집 가능 여부와 무관하게 모든 대학을 후보로 준다 (차단된 대학도 사유와 함께 보여준다) */
+function univPool() {
+  return (IDX && IDX.univs) ? IDX.univs : [];
+}
+
+function matchUnivs(q) {
+  const pool = univPool();
+  const qq = norm(q);
+  if (!qq) return pool.slice(0, 60);
+  const hit = (u) => {
+    const n = norm(u.name);
+    if (n.includes(qq)) return true;
+    if (isCho(qq) && chosung(n).includes(qq)) return true;   // ㄱㅌㄹ → 가톨릭대학교
+    return false;
+  };
+  let r = pool.filter(hit);
+  // 한글 조합 중에는 마지막 글자가 미완성이라 못 맞는 경우가 있다 (가톨 → 가토).
+  // 그럴 때는 마지막 글자를 떼고 한 번 더 찾아 후보가 끊기지 않게 한다.
+  if (!r.length && qq.length > 1) {
+    const loose = qq.slice(0, -1);
+    r = pool.filter((u) => norm(u.name).includes(loose) || (isCho(loose) && chosung(norm(u.name)).includes(loose)));
+  }
+  return r.slice(0, 60);
+}
+
+let sugItems = [], sugIdx = -1;
+
+function sugLabel(u) {
+  const ok = u.ok || u.stale;
+  const right = ok
+    ? esc(u.region || '') + ' · 모집단위 ' + (u.units || 0)
+    : (u.src === 'univ' ? '대학 자체 페이지' : '수집 불가');
+  return '<div class="it' + (ok ? '' : ' off') + '" role="option" data-id="' + esc(u.id) + '">' +
+    '<b>' + esc(u.name) + '</b><span>' + right + '</span></div>';
+}
+
+function openSug(q) {
+  const box = $('usug');
+  // 입력이 바뀌면 직전에 고른 대학의 안내는 지운다
+  const bx = $('blockbox');
+  if (bx && !bx.hidden && norm(q) !== norm($('uq').dataset.picked || '')) bx.hidden = true;
+  sugItems = matchUnivs(q);
+  sugIdx = -1;
+  if (!univPool().length) { closeSug(); return; }
+  box.innerHTML = sugItems.length
+    ? sugItems.map(sugLabel).join('')
+    : '<div class="none">일치하는 대학이 없습니다</div>';
+  box.hidden = false;
+  $('uq').setAttribute('aria-expanded', 'true');
+  box.querySelectorAll('.it').forEach((el) => {
+    el.addEventListener('mousedown', (e) => {          // click 보다 먼저 — blur 로 닫히기 전에 잡는다
+      e.preventDefault();
+      const u = univPool().find((x) => x.id === el.dataset.id);
+      if (u) pickUniv(u);
+    });
+  });
+}
+
+function closeSug() {
+  $('usug').hidden = true;
+  $('uq').setAttribute('aria-expanded', 'false');
+  sugIdx = -1;
+}
+
+function moveSug(step) {
+  const els = [...$('usug').querySelectorAll('.it')];
+  if (!els.length) return;
+  sugIdx = (sugIdx + step + els.length) % els.length;
+  els.forEach((el, i) => el.setAttribute('aria-selected', String(i === sugIdx)));
+  els[sugIdx].scrollIntoView({ block: 'nearest' });
 }
 
 let selUniv = null;
 
-async function onUnivPick() {
-  const name = $('uq').value.trim();
-  const u = IDX && IDX.univs ? IDX.univs.find((x) => x.name === name) : null;
-  const js = $('jsel'), ds = $('dsel');
-  if (!u) {
-    selUniv = null;
-    js.innerHTML = '<option value="">대학을 먼저 고르세요</option>';
-    ds.innerHTML = '<option value="">전형을 먼저 고르세요</option>';
-    $('addbtn').disabled = true;
-    return;
-  }
+/** 목록에서 대학을 확정 선택했을 때 */
+async function pickUniv(u) {
+  $('uq').value = u.name;
+  $('uq').dataset.picked = u.name;
+  closeSug();
+  const js = $('jsel'), ds = $('dsel'), bx = $('blockbox');
+  bx.hidden = true;
+
   if (!u.ok && !u.stale) {
     selUniv = null;
-    js.innerHTML = '<option value="">' + esc(u.note || '수집되지 않는 대학') + '</option>';
+    const why = u.note || '수집되지 않는 대학';
+    js.innerHTML = '<option value="">' + esc(why) + '</option>';
     ds.innerHTML = '<option value="">—</option>';
     $('addbtn').disabled = true;
+    bx.innerHTML = '<b>' + esc(u.name) + '</b> 은(는) 지금 자동 수집이 되지 않아 카드로 담을 수 없습니다.<br>' +
+      esc(why) +
+      (u.url ? '<br><a href="' + esc(u.url) + '" target="_blank" rel="noopener">원본 경쟁률 페이지 열기 →</a>' : '');
+    bx.hidden = false;
     return;
   }
+
   js.innerHTML = '<option value="">불러오는 중…</option>';
   let d = CACHE.get(u.id);
-  if (!d) { try { d = await fetchUniv(u.id); } catch (e) { js.innerHTML = '<option value="">불러오기 실패</option>'; return; } }
+  if (!d) {
+    try { d = await fetchUniv(u.id); }
+    catch (e) { js.innerHTML = '<option value="">불러오기 실패</option>'; $('addbtn').disabled = true; return; }
+  }
   selUniv = d;
   const jungs = [...new Set(d.units.map((x) => x.j))];
   js.innerHTML = jungs.map((j) => '<option value="' + esc(j) + '">' + esc(j) + '</option>').join('');
   onJungPick();
+}
+
+/** 입력창에 정확한 대학명이 들어와 있으면 그것으로 확정 */
+function pickByExactName() {
+  const v = norm($('uq').value);
+  if (!v) return false;
+  const u = univPool().find((x) => norm(x.name) === v);
+  if (u) { pickUniv(u); return true; }
+  return false;
+}
+
+function initCombo() {
+  const inp = $('uq');
+  inp.addEventListener('compositionupdate', () => { openSug(inp.value); });   // 조합 중에도 후보 갱신
+  inp.addEventListener('compositionend', () => { openSug(inp.value); });
+  inp.addEventListener('input', () => { openSug(inp.value); });
+  inp.addEventListener('focus', () => { openSug(inp.value); });
+  inp.addEventListener('blur', () => { setTimeout(closeSug, 120); });
+  inp.addEventListener('keydown', (e) => {
+    // 조합 중인지는 이벤트마다 isComposing 으로 본다.
+    // 수동 플래그는 compositionend 가 안 오는 환경에서 계속 걸린 채 남아 키 입력을 삼킨다.
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); if ($('usug').hidden) openSug(inp.value); moveSug(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSug(-1); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (sugIdx >= 0 && sugItems[sugIdx]) pickUniv(sugItems[sugIdx]);
+      else if (!pickByExactName() && sugItems.length === 1) pickUniv(sugItems[0]);
+    } else if (e.key === 'Escape') { closeSug(); }
+  });
 }
 
 function onJungPick() {
@@ -287,7 +398,6 @@ function renderNoData(err) {
 }
 
 function render() {
-  fillUnivList();
   $('wcount').textContent = S.watch.length + ' / ' + (S.watch.length > DEFW ? MAXW : DEFW);
   $('periodlabel').textContent = PERIODS[S.period] || S.period + '초';
   paintHead();
@@ -548,8 +658,7 @@ function boot() {
   booted = true;
   load();
 
-  $('uq').addEventListener('change', onUnivPick);
-  $('uq').addEventListener('input', () => { if ($('uq').value.length > 1) onUnivPick(); });
+  initCombo();
   $('jsel').addEventListener('change', onJungPick);
   $('addbtn').addEventListener('click', addWatch);
   $('clearw').addEventListener('click', () => { S.watch = []; save(); render(); toast('목록을 비웠습니다.'); });

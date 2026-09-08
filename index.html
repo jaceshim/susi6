@@ -119,6 +119,20 @@ aside{height:100%;min-height:0}
 .f label{display:block;font-size:12px;color:var(--ink-2);margin-bottom:4px}
 .f input,.f select{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
 .f select{max-width:100%}
+.combo{position:relative}
+.sug{position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:30;max-height:264px;overflow-y:auto;
+  background:var(--paper-2);border:1px solid var(--line);border-radius:10px;box-shadow:0 12px 28px -10px rgba(31,31,73,.35)}
+.sug .it{display:flex;align-items:baseline;gap:8px;padding:8px 11px;cursor:pointer;font-size:13px;border-top:1px solid var(--line-2)}
+.sug .it:first-child{border-top:0}
+.sug .it[aria-selected="true"],.sug .it:hover{background:var(--seal-soft)}
+.sug .it b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sug .it span{color:var(--ink-3);font-size:11.5px;margin-left:auto;white-space:nowrap;flex:none}
+.sug .it.off b{color:var(--ink-3)}
+.sug .it.off span{color:var(--reach)}
+.sug .none{padding:10px 11px;font-size:12.5px;color:var(--ink-3)}
+.sug mark{background:transparent;color:var(--seal);font-weight:700;padding:0}
+.blocked{margin-top:8px;padding:9px 11px;border:1px solid var(--reach);border-radius:8px;background:var(--reach-soft);font-size:12px;color:var(--ink-2);line-height:1.5}
+.blocked a{color:var(--fit)}
 .row{display:flex;gap:8px;align-items:center;justify-content:space-between;font-size:13px;color:var(--ink-2)}
 .toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink-2)}
 .toggle input{accent-color:var(--seal)}
@@ -224,8 +238,11 @@ footer .warn{font-weight:700;text-decoration:underline}
         <h2>관심 모집단위 추가 <span class="hint" id="wcount">0 / 6</span></h2>
         <div class="f">
           <label for="uq">대학</label>
-          <input id="uq" list="ulist" placeholder="대학명 입력 (예: 중앙대)" autocomplete="off">
-          <datalist id="ulist"></datalist>
+          <div class="combo">
+            <input id="uq" type="text" placeholder="대학명 입력 (예: 중앙대, ㅈㅇㄷ)" autocomplete="off"
+                   role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="usug">
+            <div class="sug" id="usug" role="listbox" hidden></div>
+          </div>
         </div>
         <div class="f">
           <label for="jsel">전형</label>
@@ -235,6 +252,7 @@ footer .warn{font-weight:700;text-decoration:underline}
           <label for="dsel">모집단위(학과)</label>
           <select id="dsel"><option value="">전형을 먼저 고르세요</option></select>
         </div>
+        <div class="blocked" id="blockbox" hidden></div>
         <button class="addbtn" id="addbtn" type="button" disabled>목록에 추가</button>
         <p class="help">기본 6개, 최대 <b id="maxlabel">20</b>개까지 담을 수 있습니다. 같은 대학의 다른 전형·학과도 각각 담을 수 있습니다.</p>
       </section>
