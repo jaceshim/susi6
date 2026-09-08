@@ -30,10 +30,19 @@ jobs:
           npm i -D playwright@1.47.2
           npx playwright install --with-deps chromium
 
+      # 러너에서 각 호스트에 닿는지부터 기록한다 (수집이 0개일 때 원인 판별용).
+      - name: 접속 진단
+        continue-on-error: true
+        run: node scripts/probe.mjs .
+
+      # 실패해도 다음 단계로 넘어가야 진단 파일(data/status.json)이 커밋된다.
       - name: 경쟁률 수집
+        id: scrape
+        continue-on-error: true
         run: node scripts/scrape.mjs .
 
       - name: 변경분 커밋
+        if: always()
         run: |
           git config user.name  "ratio-bot"
           git config user.email "ratio-bot@users.noreply.github.com"
@@ -45,3 +54,18 @@ jobs:
             git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
             git push
           fi
+
+      # 커밋이 끝난 뒤에 판정한다. 실패하면 잡이 빨갛게 뜨지만 진단 파일은 이미 올라가 있다.
+      - name: 결과 점검
+        if: always()
+        run: |
+          node -e "
+            const fs = require('fs');
+            const read = (p) => { try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch { return null; } };
+            const st = read('./data/status.json');
+            if (st) console.log('status.json: ' + JSON.stringify(st).slice(0, 800));
+            const d = read('./data/index.json') || {};
+            const ok = (d.univs || []).filter((u) => u.ok).length;
+            console.log('index.json: 대학 ' + (d.univs || []).length + '개, 수집 성공 ' + ok + '개');
+            if (!ok) { console.error('수집 성공 대학이 0개입니다. data/status.json 의 reason·hubError 를 확인하세요.'); process.exit(1); }
+          "

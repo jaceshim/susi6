@@ -26,7 +26,11 @@ data/u/<대학ID>.json            모집단위 목록 + 시간별 스냅샷 (수
 data/status.json                마지막 수집의 성공/실패 진단 (수집기가 생성)
 scripts/scrape.mjs              수집기 (Playwright)
 scripts/parse-in-page.js        브라우저 안에서 도는 표 파서
-scripts/seed-univs.mjs          허브를 못 읽을 때 대학 목록을 수동으로 심는 비상 수단
+scripts/seed-snippet.js         브라우저 콘솔에 붙여 대학 목록을 뽑는 스니펫 (권장)
+scripts/seed-univs.mjs          저장한 허브 HTML 로 대학 목록을 만드는 스크립트
+scripts/probe.mjs               러너에서 각 호스트에 닿는지 확인하는 진단
+data/univs.json                 대학 목록 (수집기가 갱신하거나 직접 심는 파일)
+data/probe.json                 마지막 접속 진단 결과
 .github/workflows/ratio.yml     15분마다 수집 → 커밋
 ```
 
@@ -69,27 +73,63 @@ scripts/seed-univs.mjs          허브를 못 읽을 때 대학 목록을 수동
 
 ## 대학 목록이 비어 있을 때
 
-`data/status.json` 을 먼저 봅니다. `reason` 과 `hubError`, 그리고 `how`(허브를 어떤 경로로 읽었는지:
-`DOM` / `HTML` / `RAW`) 가 적혀 있고, 같은 내용이 페이지의 "데이터 없음" 화면에도 표시됩니다.
-Actions 로그에서는 `허브에서 읽은 대학 N개 (경로 …)` 줄을 확인하세요.
-
 수집기는 허브를 세 가지 방법으로 시도합니다.
 
 1. 렌더된 DOM 에서 경쟁률 링크를 찾아 조상 요소에서 대학명·접수기간을 읽음
 2. 렌더된 HTML 전체를 정규식으로 파싱
 3. 원본 HTTP 응답(Next.js RSC 페이로드)을 정규식으로 파싱
 
-세 방법이 모두 100개 미만이면 지난 성공 때 저장한 `data/univs.json` 을 재사용하고,
-그것도 없으면 **`data/index.json` 을 건드리지 않고** 실패로 끝냅니다(잡이 빨갛게 뜸).
-기존에 잘 나오던 데이터가 빈 파일로 덮여 쓰이는 일은 없습니다.
+세 방법이 모두 100개 미만이면 `data/univs.json` 을 재사용하고, 그것도 없으면
+**`data/index.json` 을 건드리지 않고** 실패로 끝냅니다. 기존 데이터가 빈 파일로 덮이는 일은 없습니다.
 
-허브 자체가 러너에서 계속 막히면 목록을 직접 심을 수 있습니다.
+### 1) 어디서 막혔는지 확인
+
+`data/probe.json` 을 봅니다. 워크플로의 **접속 진단** 단계가 러너에서 세 호스트를 직접 열어보고
+상태코드·본문 크기·제목·차단 문구 여부를 남깁니다.
+
+| probe.json 결과 | 해석 | 할 일 |
+|---|---|---|
+| 세 호스트 모두 `status: 200`, `blocked: false` | 일시적 실패 | 워크플로 재실행 |
+| 허브만 실패/차단, 경쟁률 호스트는 200 | 허브만 막힘 | 아래 2) 로 목록을 심으면 끝 |
+| 경쟁률 호스트까지 실패/차단 | 러너 IP 자체가 막힘 | 아래 3) 으로 실행 위치를 옮겨야 함 |
+
+국내 입시 사이트는 해외 데이터센터 IP를 막는 경우가 있고, GitHub 러너는 미국 리전입니다.
+
+### 2) 대학 목록 직접 심기 (허브만 막힌 경우)
+
+가장 쉬운 방법 — 브라우저 콘솔:
+
+1. 크롬에서 [허브 페이지](https://www.jinhak.com/jh/high3/univ-entrance-info/ipsi-analysis/ipsi-strategy/100000727)를 열고 끝까지 스크롤
+2. F12 → Console 에 `scripts/seed-snippet.js` 내용을 전부 붙여넣고 Enter
+3. 다운로드된 `univs.json` 을 리포지토리의 `data/univs.json` 으로 넣고 push
 
 ```bash
-# 브라우저에서 허브 페이지를 열어 HTML 로 저장한 뒤
-node scripts/seed-univs.mjs ~/Downloads/저장한파일.html   # data/univs.json 생성
 git add data/univs.json && git commit -m "chore(data): 대학 목록 시드" && git push
 ```
+
+허브 페이지를 HTML 로 저장해 두었다면 이 방법도 됩니다.
+
+```bash
+node scripts/seed-univs.mjs ~/Downloads/저장한파일.html
+```
+
+심어 두면 이후 수집기는 허브를 못 읽어도 이 목록으로 계속 수집합니다.
+
+### 3) 러너 IP 가 막힌 경우
+
+GitHub Actions 로는 수집이 불가능하므로 수집기를 국내에서 도는 곳으로 옮겨야 합니다.
+같은 스크립트를 그대로 쓰고, 결과만 리포지토리에 push 하면 페이지는 손댈 필요가 없습니다.
+
+```bash
+# 본인 맥/PC 에서 (한 번 설치)
+npm i playwright && npx playwright install chromium
+
+# 15분마다 실행되게 cron 등록 (crontab -e)
+*/15 * * * * cd ~/susi-ratio && node scripts/scrape.mjs . && \
+  git add data && git commit -m "chore(data): 경쟁률 갱신" && git push
+```
+
+이 경우 `.github/workflows/ratio.yml` 은 `Disable workflow` 로 꺼두면 됩니다.
 
 ## 갱신 주기에 대해
 
