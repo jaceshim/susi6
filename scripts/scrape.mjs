@@ -161,12 +161,21 @@ async function collect(ctx, targets) {
   const page = await ctx.newPage();
   const out = [];
   try {
-    const res = await page.goto(targets[0].url, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    const status = res ? res.status() : 0;
-    const head = (await page.content()).slice(0, 4000);
-    if (status >= 400 || BLOCK_RE.test(head)) {
+    // 첫 요청으로 이 호스트가 살아 있는지 본다.
+    // 4xx 응답뿐 아니라 예외(네트워크 오류)도 '호스트 불가'로 처리해야 다른 계열 수집이 이어진다.
+    let status = 0, head = '', navErr = null;
+    try {
+      const res = await page.goto(targets[0].url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+      status = res ? res.status() : 0;
+      head = (await page.content()).slice(0, 4000);
+    } catch (e) {
+      navErr = String(e.message).split('\n')[0].slice(0, 120);
+    }
+    if (navErr || status >= 400 || BLOCK_RE.test(head)) {
       // 이 호스트는 통째로 막혔다. 85개를 하나씩 실패시키지 말고 한 번에 사유를 붙인다.
-      const why = '호스트 차단 (HTTP ' + status + (BLOCK_RE.test(head) ? ', 접속 확인 페이지' : '') + ')';
+      const why = navErr
+        ? '호스트 접속 실패 (' + navErr + ')'
+        : '호스트 차단 (HTTP ' + status + (BLOCK_RE.test(head) ? ', 접속 확인 페이지' : '') + ')';
       console.log('  ' + why + ' — ' + targets.length + '개 건너뜀');
       await page.close();
       return targets.map((t) => ({ id: t.id, ok: false, err: why, blockedHost: true, rows: [] }));
