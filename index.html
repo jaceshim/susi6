@@ -191,6 +191,18 @@ th,td{padding:7px 10px;text-align:left;border-top:1px solid var(--line-2);white-
 th{font-size:10.5px;color:var(--ink-2);letter-spacing:.05em;text-transform:uppercase;border-top:0;background:var(--paper-3);position:sticky;top:0;z-index:2}
 td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
 tbody tr.pinned{background:var(--seal-soft)}
+/* 27 · 26 비교표 */
+table.cmp{min-width:660px}
+table.cmp td,table.cmp th{vertical-align:middle}
+table.cmp tr.grp td{border-top:2px solid var(--line)}
+table.cmp tr.sub td{border-top:1px dashed var(--line-2);background:var(--paper-3)}
+table.cmp td.yr{font-family:var(--mono);font-size:12px;color:var(--ink-3);white-space:nowrap}
+table.cmp td.yr.cur{color:var(--seal);font-weight:700}
+table.cmp td.live{font-family:var(--mono);font-size:22px;letter-spacing:-.02em;text-align:right;white-space:nowrap}
+table.cmp td.live b{font-weight:600}
+table.cmp td.live.lo b{color:var(--safe)} table.cmp td.live.mid b{color:var(--fit)}
+table.cmp td.live.hi b{color:var(--reach)} table.cmp td.live.vhi b{color:var(--up)}
+table.cmp td b{font-weight:600}
 .box{padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:var(--paper-2);box-shadow:var(--shadow)}
 .box h3{margin:0 0 8px;font-size:14px}
 .box p,.box ul{margin:0;font-size:12.5px;color:var(--ink-2)}
@@ -214,7 +226,7 @@ footer .warn{font-weight:700;text-decoration:underline}
   <div class="hwrap">
     <div class="brand">
       <span class="seal" aria-hidden="true">경쟁률<br>2027</span>
-      <div><h1>수시 경쟁률 현황</h1><div class="sub" id="subline">2027학년도 수시 원서접수 · 진학사 대학별 경쟁률 집계</div></div>
+      <div><h1>수시 경쟁률 현황</h1><div class="sub" id="subline">2027학년도 수시 원서접수 · 퍼팩 입시허브 공개 API 실시간 조회</div></div>
     </div>
     <div class="hstat" id="hstat"></div>
   </div>
@@ -259,7 +271,7 @@ footer .warn{font-weight:700;text-decoration:underline}
           <button type="button" data-v="600">10분</button>
           <button type="button" data-v="1800">30분</button>
         </div>
-        <p class="help">여기서 바꾸는 주기는 <b>이미 수집된 값을 다시 불러오는</b> 간격입니다. 수집 자체는 GitHub Actions 가 <b>5분마다</b> 돌고, 원본 경쟁률은 대학에 따라 <b>10분~1시간</b>마다 갱신됩니다. 그래서 1분으로 두어도 그보다 자주 값이 바뀌지는 않습니다.</p>
+        <p class="help">이 주기마다 <b>API 를 다시 조회</b>합니다. 원본 경쟁률은 대학에 따라 <b>10분~1시간</b>마다 갱신되므로, 1분으로 두어도 그보다 자주 값이 바뀌지는 않습니다.</p>
       </section>
 
       <section>
@@ -278,7 +290,7 @@ footer .warn{font-weight:700;text-decoration:underline}
       </section>
 
       <section>
-        <h2>수집 상태</h2>
+        <h2>데이터 상태</h2>
         <div id="srcstat" class="help"></div>
       </section>
     </div>
@@ -298,6 +310,823 @@ footer .warn{font-weight:700;text-decoration:underline}
 <button class="shint" id="hintR" type="button" hidden aria-label="아래로 스크롤"><span>아래로</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>
 <div class="toast" id="toast" role="status"></div>
 
-<script src="app.js"></script>
+<script>
+/* 2027 수시 경쟁률 현황 — 정적 페이지. 퍼팩 공개 API 를 브라우저에서 직접 조회한다. */
+'use strict';
+
+const $ = (id) => document.getElementById(id);
+const MAXW = 20, DEFW = 6;
+const PERIODS = { 60: '1분', 180: '3분', 300: '5분', 600: '10분', 1800: '30분' };
+const KEY = 'ratio2027:v1';
+
+/* ---------- 상태 ---------- */
+let S = { watch: [], auto: true, period: 300, sort: 'add' };
+let IDX = null;                 // 대학 목록 + 기준시각 (live-meta 기반)
+let ITEMS = {};                 // watchKey -> lookup 결과(실시간)
+const CACHE = new Map();        // 대학명 -> { adms, deps }
+let timer = null, tick = null, nextAt = 0, loading = false, migrated = false;
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) {
+      const o = JSON.parse(raw);
+      if (o && typeof o === 'object') S = Object.assign(S, o);
+    }
+  } catch (e) {}
+  if (!Array.isArray(S.watch)) S.watch = [];
+  // 예전 버전은 대학을 내부 id(J…/W…)로 저장했다. 지금은 API 조회용 이름을 쓰므로 그 항목은 버린다.
+  const before = S.watch.length;
+  S.watch = S.watch.filter((w) => w && typeof w.u === 'string' && !/^[JWXu]\d/.test(w.u) && w.j && w.d)
+    .map((w) => ({ u: w.u, j: w.j, d: w.d }))
+    .slice(0, MAXW);
+  if (before && !S.watch.length) migrated = true;
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} }
+
+function toast(msg, ms) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._h);
+  t._h = setTimeout(() => t.classList.remove('show'), ms || 2600);
+}
+
+/* ---------- 유틸 ---------- */
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const unitKey = (u) => [u.j, u.c, u.l, u.u].join('');
+const watchKey = (w) => [w.j, w.c, w.l, w.d].join('');
+const fmtRatio = (r) => (r == null ? '—' : r.toFixed(2));
+const nfmt = (n) => (n == null ? '—' : n.toLocaleString('ko-KR'));
+
+function band(r) {
+  if (r == null) return '';
+  if (r < 3) return 'lo';
+  if (r < 8) return 'mid';
+  if (r < 15) return 'hi';
+  return 'vhi';
+}
+function bandLabel(r) {
+  if (r == null) return '집계 대기';
+  if (r < 3) return '여유';
+  if (r < 8) return '보통';
+  if (r < 15) return '높음';
+  return '매우 높음';
+}
+
+/** "2026-09-08T15:00" -> "9/8 15:00" */
+function shortTime(t) {
+  if (!t) return '—';
+  const m = String(t).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (!m) return String(t);
+  return +m[2] + '/' + +m[3] + ' ' + m[4] + ':' + m[5];
+}
+
+/** 접수 마감. API 가 대학별 정확한 마감시각(recruitment_end_at)을 주므로 그대로 쓴다. */
+function ddText(endAt) {
+  const e = endAt ? new Date(endAt) : null;
+  if (!e || isNaN(e)) return '';
+  const diff = e.getTime() - Date.now();
+  if (diff <= 0) return '마감';
+  const h = Math.floor(diff / 3600e3), mi = Math.floor((diff % 3600e3) / 60e3);
+  if (h >= 24) return 'D-' + Math.floor(h / 24) + ' ' + (h % 24) + '시간';
+  return h + '시간 ' + mi + '분 남음';
+}
+
+/* ---------- 데이터 ----------
+ * 경쟁률은 퍼팩(prft) 공개 API 를 페이지에서 직접 조회한다. 수집기·서버가 없다.
+ *   live-meta   : 실시간 제공 대학 + 접수 마감시각 + 원본 링크 + 기준시각   (1회)
+ *   admissions  : 대학의 전형 목록                                        (대학 고를 때)
+ *   departments : 전형의 학과 목록                                        (전형 고를 때)
+ *   lookup      : 모집단위 하나의 모집인원·경쟁률·D단계 추이               (카드마다)
+ * 선택 UI 를 기다림 없이 띄우기 위해 data/catalog.json 스냅샷이 있으면 먼저 쓴다.
+ */
+const API = 'https://api.prft.co.kr/api/public/hub/competition-rates';
+const YEAR = '2027';
+const PREV_YEAR = '2026';
+const qs = (o) => Object.entries(o).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+
+async function apiGet(p) {
+  const r = await fetch(API + p, { headers: { accept: 'application/json' } });
+  if (!r.ok) throw new Error('API HTTP ' + r.status);
+  const b = await r.json();
+  if (!b || b.success === false) throw new Error((b && b.message) || 'API 오류');
+  return b.data;
+}
+
+/** 대학 목록·마감시각·기준시각. 스냅샷이 있으면 그걸 쓰고, 없으면 API 로 받는다. */
+let SNAP;                       // undefined=아직 안 봄, null=없음
+async function fetchMeta() {
+  if (SNAP === undefined) {
+    SNAP = null;
+    try {
+      const r = await fetch('data/catalog.json', { cache: 'no-store' });
+      if (r.ok) SNAP = await r.json();
+    } catch (e) {}
+  }
+  const snap = SNAP;
+
+  const meta = await apiGet('/live-meta?' + qs({ year: YEAR }));
+  const src = new Map((meta.sources || []).map((x) => [x.university_name, x]));
+  const liveNames = meta.universities || [];
+  const names = snap && snap.univs && snap.univs.length
+    ? snap.univs.map((u) => u.name)
+    : liveNames.slice();
+  const seen = new Set(names);
+  for (const n of liveNames) if (!seen.has(n)) { names.push(n); seen.add(n); }
+
+  IDX = {
+    built: meta.last_announced_at || meta.last_crawled_at || null,
+    crawledAt: meta.last_crawled_at || null,
+    live: liveNames.length,
+    total: names.length,
+    fromSnapshot: !!(snap && snap.univs && snap.univs.length),
+    univs: names.map((name) => {
+      const s = src.get(name);
+      return {
+        id: name,                     // API 가 이름으로 조회하므로 이름이 곧 키
+        name,
+        ok: liveNames.includes(name),
+        endAt: s ? s.recruitment_end_at : null,
+        url: s ? s.ratio_url : null,
+        note: liveNames.includes(name) ? null : '이 대학은 실시간 경쟁률을 제공하지 않습니다',
+      };
+    }),
+  };
+}
+
+/** 대학의 전형·학과 트리. 스냅샷(data/cat/<id>.json)이 있으면 쓰고 없으면 API. */
+async function fetchUniv(name) {
+  if (CACHE.has(name)) return CACHE.get(name);
+
+  // 1) 스냅샷 (--full 로 만들어 커밋해 둔 경우)
+  if (SNAP && SNAP.full && SNAP.univs) {
+    const hit = SNAP.univs.find((u) => u.name === name);
+    if (hit) {
+      try {
+        const r = await fetch('data/cat/' + hit.id + '.json', { cache: 'no-store' });
+        if (r.ok) {
+          const t = await r.json();
+          const d = {
+            name,
+            adms: (t.adms || []).map((a) => ({ j: a.j, t: a.t })),
+            deps: new Map((t.adms || []).map((a) => [a.j, a.d || []])),
+          };
+          CACHE.set(name, d);
+          return d;
+        }
+      } catch (e) { /* 없으면 API 로 */ }
+    }
+  }
+
+  // 2) API
+  const adms = (await apiGet('/admissions?' + qs({ year: YEAR, university_name: name })) || {}).admissions || [];
+  const list = adms.map((a) => (typeof a === 'string' ? { j: a } : { j: a.admission_name, t: a.admission_type }));
+  const d = { name, adms: list, deps: new Map() };
+  CACHE.set(name, d);
+  return d;
+}
+
+async function fetchDeps(name, jung) {
+  const d = await fetchUniv(name);
+  if (d.deps.has(jung)) return d.deps.get(jung);
+  const deps = (await apiGet('/departments?' + qs({ year: YEAR, university_name: name, admission_name: jung })) || {}).departments || [];
+  d.deps.set(jung, deps);
+  return deps;
+}
+
+/** 모집단위 하나를 특정 학년도로 조회 */
+async function fetchItem(w, year) {
+  const d = await apiGet('/lookup?' + qs({
+    year: year || YEAR, university_name: w.u, admission_name: w.j, department_name: w.d,
+  }));
+  return (d && d.item) || null;
+}
+
+/* ---------- 시간별 이력 (브라우저에 쌓는다) ----------
+ * API 는 D-3~D-day 단계별 값만 주므로, 그 사이 움직임은 이 브라우저가 본 값으로 채운다.
+ */
+const HKEY = 'ratio2027:hist:v1';
+let HIST = {};
+function loadHist() { try { HIST = JSON.parse(localStorage.getItem(HKEY) || '{}') || {}; } catch (e) { HIST = {}; } }
+function saveHist() { try { localStorage.setItem(HKEY, JSON.stringify(HIST)); } catch (e) {} }
+function pushHist(key, t, rate) {
+  if (rate == null || !t) return;
+  const a = HIST[key] || (HIST[key] = []);
+  if (a.length && a[a.length - 1][0] === t) { a[a.length - 1][1] = rate; return; }
+  a.push([t, rate]);
+  while (a.length > 60) a.shift();
+}
+
+async function refresh(first) {
+  if (loading) return;
+  loading = true;
+  const before = IDX && IDX.built;
+  try {
+    await fetchMeta();
+    // 워치 항목은 하나씩 lookup 한다 (최대 20개). 실패한 항목만 비워 둔다.
+    ITEMS = {};
+    await Promise.all(S.watch.map(async (w) => {
+      const k = watchKey(w);
+      try {
+        // 올해(실시간)와 지난해(비교)를 같이 받는다
+        const [cur, prevYear] = await Promise.all([
+          fetchItem(w, YEAR),
+          fetchItem(w, PREV_YEAR).catch(() => null),
+        ]);
+        ITEMS[k] = { cur, prev: prevYear };
+        if (cur) pushHist(k, cur.live_announced_at || IDX.built, cur.rate_final);
+      } catch (e) { ITEMS[k] = { err: String(e.message).slice(0, 60) }; }
+    }));
+    saveHist();
+    render();
+    if (!first && IDX && IDX.built && IDX.built !== before) {
+      toast('새 수집분 반영 · ' + shortTime(IDX.built));
+    }
+  } catch (e) {
+    if (!first) toast('불러오기 실패: ' + e.message, 4000);
+    renderNoData(e);
+  } finally {
+    loading = false;
+    scheduleNext();
+  }
+}
+
+function scheduleNext() {
+  clearTimeout(timer);
+  clearInterval(tick);
+  if (!S.auto) { nextAt = 0; paintHead(); return; }
+  nextAt = Date.now() + S.period * 1000;
+  timer = setTimeout(() => refresh(false), S.period * 1000);
+  tick = setInterval(paintHead, 1000);
+  paintHead();
+}
+
+/* ---------- 헤더 ---------- */
+function paintHead() {
+  const h = $('hstat');
+  if (!h) return;
+  // 상단에는 '마지막 수집 시각' 과 '접수 마감' 만 둔다.
+  // 자동 갱신이 유일한 조회 경로이므로 상단에 갱신 버튼은 두지 않는다.
+  const parts = [];
+  parts.push('<div class="tl' + (IDX ? ' live' : '') + '"><small>마지막 수집</small><b>' +
+    (IDX ? '<span class="dotlive"></span>' + esc(shortTime(IDX.built)) : '데이터 없음') + '</b></div>');
+  // 담은 대학 중 가장 먼저 마감하는 곳을 기준으로 보여준다.
+  const ends = S.watch.map((w) => (uOf(w.u) || {}).endAt).filter(Boolean).sort();
+  const nearest = ends[0] || (IDX && IDX.univs || []).map((u) => u.endAt).filter(Boolean).sort()[0];
+  parts.push('<div class="tl hot"><small>접수 마감</small><b>' + esc(ddText(nearest) || '—') + '</b></div>');
+  h.innerHTML = parts.join('');
+
+  // 다음 불러오기까지 남은 시간은 좌측 자동 갱신 섹션에 표시한다.
+  const ni = $('nextin');
+  if (ni) {
+    const left = nextAt ? Math.max(0, Math.round((nextAt - Date.now()) / 1000)) : null;
+    ni.textContent = !S.auto ? '꺼짐'
+      : (left == null ? '대기' : Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') + ' 후');
+  }
+}
+
+const uOf = (id) => (IDX && IDX.univs ? IDX.univs.find((u) => u.id === id) : null);
+
+/* ---------- 선택 UI (대학 콤보박스) ---------- */
+// datalist 는 한글 IME 조합 중에 후보를 갱신하지 않아 "가톨" 처럼 조합 중인 값으로는
+// 아무것도 뜨지 않는다. 그래서 직접 만든 목록으로 바꾸고 초성 검색까지 지원한다.
+const CHO = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
+const chosung = (s) => [...String(s)].map((ch) => {
+  const c = ch.charCodeAt(0) - 0xAC00;
+  return (c >= 0 && c < 11172) ? CHO[Math.floor(c / 588)] : ch;
+}).join('');
+const norm = (s) => String(s).replace(/\s+/g, '').toLowerCase();
+const isCho = (s) => /^[ㄱ-ㅎ]+$/.test(String(s).replace(/\s+/g, ''));
+
+/** 수집 가능 여부와 무관하게 모든 대학을 후보로 준다 (차단된 대학도 사유와 함께 보여준다) */
+function univPool() {
+  return (IDX && IDX.univs) ? IDX.univs : [];
+}
+
+function matchUnivs(q) {
+  const pool = univPool();
+  const qq = norm(q);
+  if (!qq) return pool.slice(0, 60);
+  const hit = (u) => {
+    const n = norm(u.name);
+    if (n.includes(qq)) return true;
+    if (isCho(qq) && chosung(n).includes(qq)) return true;   // ㄱㅌㄹ → 가톨릭대학교
+    return false;
+  };
+  let r = pool.filter(hit);
+  // 한글 조합 중에는 마지막 글자가 미완성이라 못 맞는 경우가 있다 (가톨 → 가토).
+  // 그럴 때는 마지막 글자를 떼고 한 번 더 찾아 후보가 끊기지 않게 한다.
+  if (!r.length && qq.length > 1) {
+    const loose = qq.slice(0, -1);
+    r = pool.filter((u) => norm(u.name).includes(loose) || (isCho(loose) && chosung(norm(u.name)).includes(loose)));
+  }
+  return r.slice(0, 60);
+}
+
+let sugItems = [], sugIdx = -1;
+
+function sugLabel(u) {
+  const right = u.ok
+    ? (u.endAt ? esc(endShort(u.endAt)) + ' 마감' : '실시간')
+    : '실시간 없음';
+  return '<div class="it' + (u.ok ? '' : ' off') + '" role="option" data-id="' + esc(u.id) + '">' +
+    '<b>' + esc(u.name) + '</b><span>' + right + '</span></div>';
+}
+
+/** "2026-09-11T18:00:00+09:00" -> "9/11 18시" */
+function endShort(t) {
+  const d = t ? new Date(t) : null;
+  if (!d || isNaN(d)) return '';
+  const k = new Date(d.getTime() + (9 * 60 + d.getTimezoneOffset()) * 60000);
+  return (k.getMonth() + 1) + '/' + k.getDate() + ' ' + k.getHours() + '시';
+}
+
+function openSug(q) {
+  const box = $('usug');
+  // 입력이 바뀌면 직전에 고른 대학의 안내는 지운다
+  const bx = $('blockbox');
+  if (bx && !bx.hidden && norm(q) !== norm($('uq').dataset.picked || '')) bx.hidden = true;
+  sugItems = matchUnivs(q);
+  sugIdx = -1;
+  if (!univPool().length) { closeSug(); return; }
+  box.innerHTML = sugItems.length
+    ? sugItems.map(sugLabel).join('')
+    : '<div class="none">일치하는 대학이 없습니다</div>';
+  box.hidden = false;
+  $('uq').setAttribute('aria-expanded', 'true');
+  box.querySelectorAll('.it').forEach((el) => {
+    el.addEventListener('mousedown', (e) => {          // click 보다 먼저 — blur 로 닫히기 전에 잡는다
+      e.preventDefault();
+      const u = univPool().find((x) => x.id === el.dataset.id);
+      if (u) pickUniv(u);
+    });
+  });
+}
+
+function closeSug() {
+  $('usug').hidden = true;
+  $('uq').setAttribute('aria-expanded', 'false');
+  sugIdx = -1;
+}
+
+function moveSug(step) {
+  const els = [...$('usug').querySelectorAll('.it')];
+  if (!els.length) return;
+  sugIdx = (sugIdx + step + els.length) % els.length;
+  els.forEach((el, i) => el.setAttribute('aria-selected', String(i === sugIdx)));
+  els[sugIdx].scrollIntoView({ block: 'nearest' });
+}
+
+let selUniv = null;
+
+/** 목록에서 대학을 확정 선택했을 때 */
+async function pickUniv(u) {
+  $('uq').value = u.name;
+  $('uq').dataset.picked = u.name;
+  closeSug();
+  const js = $('jsel'), ds = $('dsel'), bx = $('blockbox');
+  bx.hidden = true;
+
+  if (!u.ok) {
+    selUniv = null;
+    const why = u.note || '실시간 경쟁률이 제공되지 않는 대학';
+    js.innerHTML = '<option value="">' + esc(why) + '</option>';
+    ds.innerHTML = '<option value="">—</option>';
+    $('addbtn').disabled = true;
+    bx.innerHTML = '<b>' + esc(u.name) + '</b> 은(는) ' + YEAR + '학년도 실시간 경쟁률 대상이 아닙니다.<br>' + esc(why);
+    bx.hidden = false;
+    return;
+  }
+
+  js.innerHTML = '<option value="">전형 불러오는 중…</option>';
+  ds.innerHTML = '<option value="">—</option>';
+  $('addbtn').disabled = true;
+  try {
+    const d = await fetchUniv(u.name);
+    selUniv = d;
+    if (!d.adms.length) {
+      js.innerHTML = '<option value="">전형 정보가 없습니다</option>';
+      return;
+    }
+    js.innerHTML = d.adms.map((a) => '<option value="' + esc(a.j) + '">' + esc(a.j) + '</option>').join('');
+    await onJungPick();
+  } catch (e) {
+    selUniv = null;
+    js.innerHTML = '<option value="">불러오기 실패: ' + esc(e.message) + '</option>';
+  }
+}
+
+/** 입력창에 정확한 대학명이 들어와 있으면 그것으로 확정 */
+function pickByExactName() {
+  const v = norm($('uq').value);
+  if (!v) return false;
+  const u = univPool().find((x) => norm(x.name) === v);
+  if (u) { pickUniv(u); return true; }
+  return false;
+}
+
+function initCombo() {
+  const inp = $('uq');
+  inp.addEventListener('compositionupdate', () => { openSug(inp.value); });   // 조합 중에도 후보 갱신
+  inp.addEventListener('compositionend', () => { openSug(inp.value); });
+  inp.addEventListener('input', () => { openSug(inp.value); });
+  inp.addEventListener('focus', () => { openSug(inp.value); });
+  inp.addEventListener('blur', () => { setTimeout(closeSug, 120); });
+  inp.addEventListener('keydown', (e) => {
+    // 조합 중인지는 이벤트마다 isComposing 으로 본다.
+    // 수동 플래그는 compositionend 가 안 오는 환경에서 계속 걸린 채 남아 키 입력을 삼킨다.
+    if (e.isComposing) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); if ($('usug').hidden) openSug(inp.value); moveSug(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); moveSug(-1); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (sugIdx >= 0 && sugItems[sugIdx]) pickUniv(sugItems[sugIdx]);
+      else if (!pickByExactName() && sugItems.length === 1) pickUniv(sugItems[0]);
+    } else if (e.key === 'Escape') { closeSug(); }
+  });
+}
+
+async function onJungPick() {
+  const ds = $('dsel');
+  if (!selUniv) return;
+  const j = $('jsel').value;
+  if (!j) { ds.innerHTML = '<option value="">—</option>'; $('addbtn').disabled = true; return; }
+  ds.innerHTML = '<option value="">학과 불러오는 중…</option>';
+  $('addbtn').disabled = true;
+  try {
+    const deps = await fetchDeps(selUniv.name, j);
+    ds.innerHTML = deps.length
+      ? deps.map((d) => '<option value="' + esc(d) + '">' + esc(d) + '</option>').join('')
+      : '<option value="">학과 정보가 없습니다</option>';
+    $('addbtn').disabled = !deps.length || S.watch.length >= MAXW;
+  } catch (e) {
+    ds.innerHTML = '<option value="">불러오기 실패</option>';
+  }
+}
+
+function addWatch() {
+  if (!selUniv) return;
+  if (S.watch.length >= MAXW) { toast('최대 ' + MAXW + '개까지만 추가할 수 있습니다.'); return; }
+  const j = $('jsel').value, d = $('dsel').value;
+  if (!j || !d) return;
+  const w = { u: selUniv.name, j, d };
+  if (S.watch.some((x) => watchKey(x) === watchKey(w))) { toast('이미 추가한 모집단위입니다.'); return; }
+  S.watch.push(w);
+  save();
+  render();
+  refresh(false);            // 새로 담은 항목의 실시간 값을 바로 가져온다
+  toast('추가: ' + w.u + ' ' + d);
+}
+
+function removeWatch(n) {
+  const w = S.watch[n];
+  if (!w) return;
+  S.watch.splice(n, 1);
+  save();
+  render();
+  toast('제거: ' + w.d);
+}
+
+/* ---------- 계산 ---------- */
+/** 카드 한 장에 필요한 값을 실시간 응답에서 뽑는다.
+ *  rate_final = 최신 경쟁률, rate_d3~rate_dday3 = D단계별 값, 그 사이는 이 브라우저가 본 값으로 채운다. */
+const D_STAGES = [
+  ['rate_d3', 'rate_collected_at_d3', 'D-3'],
+  ['rate_d2', 'rate_collected_at_d2', 'D-2'],
+  ['rate_d1', 'rate_collected_at_d1', 'D-1'],
+  ['rate_dday1', 'rate_collected_at_dday1', 'D-day'],
+  ['rate_dday2', 'rate_collected_at_dday2', 'D-day②'],
+  ['rate_dday3', 'rate_collected_at_dday3', 'D-day③'],
+];
+
+function rowOf(w) {
+  const k = watchKey(w);
+  const box = ITEMS[k];
+  if (box === undefined) return null;                // 아직 조회 전
+  if (box && box.err) return { err: box.err };
+  const it = box && box.cur;
+  if (!it) return { miss: true };                    // API 에 해당 모집단위가 없음
+
+  const q = it.recruitment_quota;
+  // D단계 값 → 시계열
+  const stages = D_STAGES
+    .map(([rk, tk, label]) => ({ label, at: it[tk], v: it[rk] }))
+    .filter((x) => x.v != null);
+  // 이 브라우저가 본 값으로 사이를 메운다
+  const seen = (HIST[k] || []).map(([t, v]) => ({ label: '', at: shortTime(t), v }));
+  const series = stages.concat(seen).filter((x) => x.v != null);
+
+  const ratio = it.rate_final != null ? it.rate_final : (stages.length ? stages[stages.length - 1].v : null);
+  const prev = stages.length ? stages[stages.length - 1].v : null;
+  const delta = (ratio != null && prev != null) ? +(ratio - prev).toFixed(2) : null;
+
+  return {
+    unit: { j: it.admission_name, u: it.department_name, c: '', l: '' },
+    q,
+    apply: (q != null && ratio != null) ? Math.round(q * ratio) : null,   // API 는 지원인원을 주지 않아 경쟁률×모집인원으로 환산
+    at: it.live_announced_at || it.live_crawled_at,
+    ratio, delta, series, stages,
+  };
+}
+
+function sparkline(series) {
+  if (!series || series.length < 2) return '';
+  const vals = series.slice(-24).map((s) => s.v);
+  const max = Math.max(...vals), min = Math.min(...vals);
+  const span = max - min || 1;
+  const W = 104, H = 42, P = 3;
+  const pts = vals.map((v, i) => {
+    const x = P + (i / (vals.length - 1)) * (W - P * 2);
+    const y = H - P - ((v - min) / span) * (H - P * 2);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  });
+  return '<svg class="spark" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' +
+    '<polyline fill="none" stroke="var(--c,currentColor)" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round" points="' + pts.join(' ') + '"></polyline>' +
+    '<circle cx="' + pts[pts.length - 1].split(',')[0] + '" cy="' + pts[pts.length - 1].split(',')[1] + '" r="2.4" fill="var(--c,currentColor)"></circle></svg>';
+}
+
+/* ---------- 렌더 ---------- */
+function renderNoData(err) {
+  $('results').innerHTML = '<div class="empty"><b>경쟁률 API 에서 정보를 받지 못했습니다.</b><br>' +
+    '잠시 뒤 자동으로 다시 시도합니다. 계속 실패하면 네트워크나 API 상태를 확인해 주세요.' +
+    (err ? '<br><span style="font-size:12px">(' + esc(err.message) + ')</span>' : '') + '</div>';
+  paintFoot();
+}
+
+function render() {
+  $('wcount').textContent = S.watch.length + ' / ' + (S.watch.length > DEFW ? MAXW : DEFW);
+  $('periodlabel').textContent = PERIODS[S.period] || S.period + '초';
+  paintHead();
+  paintPanel();
+  if (!IDX || !(IDX.univs || []).length) { renderNoData(null); return; }
+
+  const rows = S.watch.map((w, n) => ({ w, n, r: rowOf(w) }));
+  const order = rows.slice();
+  if (S.sort === 'hi') order.sort((a, b) => (b.r && b.r.ratio || -1) - (a.r && a.r.ratio || -1));
+  if (S.sort === 'lo') order.sort((a, b) => (a.r && a.r.ratio == null ? 9e9 : a.r.ratio) - (b.r && b.r.ratio == null ? 9e9 : b.r.ratio));
+  if (S.sort === 'delta') order.sort((a, b) => (b.r && b.r.delta || 0) - (a.r && a.r.delta || 0));
+
+  const html = [];
+  html.push('<h2 class="sec">선택한 대학의 경쟁률 <small>' + S.watch.length + '개 · 대학 ' +
+    new Set(S.watch.map((w) => w.u)).size + '곳' + (S.sort === 'add' ? '' : ' · 정렬 적용') + '</small></h2>');
+  if (!S.watch.length) {
+    html.push('<div class="empty"><b>아직 선택한 대학이 없습니다.</b><br>왼쪽에서 대학 → 전형 → 모집단위를 골라 추가하세요.<br>' +
+      '실시간 경쟁률 제공 ' + (IDX.live || 0) + ' / ' + (IDX.total || 0) + '개 대학</div>');
+  } else {
+    html.push('<div class="cards">' + order.map((o) => cardHTML(o)).join('') + '</div>');
+  }
+  html.push(tableHTML());
+  html.push(noteHTML());
+  $('results').innerHTML = html.join('');
+
+  $('results').querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => removeWatch(+b.dataset.rm)));
+  const q = $('tq');
+  if (q) q.addEventListener('input', filterTable);
+  paintFoot();
+  if (window.__hints) window.__hints();
+}
+
+function cardHTML(o) {
+  const w = o.w, r = o.r;
+  const u = uOf(w.u) || {};
+  if (!r) {
+    return '<div class="card"><div class="top"><div class="title"><div class="u">' + esc(u.name || w.u) + '</div>' +
+      '<div class="d">' + esc(w.d) + '</div><div class="t">' + esc(w.j) + '</div></div>' +
+      '<button class="xbtn" data-rm="' + o.n + '">제거</button></div>' +
+      '<div class="empty" style="padding:12px">불러오는 중…</div></div>';
+  }
+  if (r.miss || r.err) {
+    return '<div class="card"><div class="top"><div class="title"><div class="u">' + esc(u.name || w.u) + '</div>' +
+      '<div class="d">' + esc(w.d) + '</div><div class="t">' + esc(w.j) + '</div></div>' +
+      '<button class="xbtn" data-rm="' + o.n + '">제거</button></div>' +
+      '<div class="empty" style="padding:12px">' +
+      (r.err ? '조회 실패: ' + esc(r.err) : '이 모집단위가 조회되지 않습니다. 전형·학과명이 바뀌었을 수 있어요.') +
+      '</div></div>';
+  }
+  const b = band(r.ratio);
+  const dcls = r.delta == null ? 'flat' : (r.delta > 0 ? 'up' : 'flat');
+  const last = r.stages.length ? r.stages[r.stages.length - 1].label : '';
+  const dtxt = r.delta == null ? '추이 —'
+    : (r.delta > 0 ? '+' + r.delta.toFixed(2) : r.delta.toFixed(2)) + (last ? ' vs ' + last : '');
+  return '<div class="card ' + b + '">' +
+    '<div class="top"><div class="title">' +
+      '<div class="u">' + esc(u.name || '') + '</div>' +
+      '<div class="d">' + esc(r.unit.u) + '</div>' +
+      '<div class="t">' + esc(r.unit.j) + '</div>' +
+    '</div><div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex:none">' +
+      '<span class="pill">' + bandLabel(r.ratio) + '</span>' +
+      '<button class="xbtn" data-rm="' + o.n + '">제거</button>' +
+    '</div></div>' +
+    '<div class="bignum"><span class="r">' + fmtRatio(r.ratio) + '<small> : 1</small></span>' +
+      '<span class="delta ' + dcls + '">' + esc(dtxt) + '</span></div>' +
+    '<div class="cutrow"><div class="cuts">' +
+      '<div><span>모집인원</span><b>' + nfmt(r.q) + '</b></div>' +
+      '<div><span>지원(환산)</span><b>' + nfmt(r.apply) + '</b></div>' +
+      '<div><span>기준 시각</span><b>' + esc(shortTime(r.at)) + '</b></div>' +
+    '</div>' + sparkline(r.series) + '</div>' +
+    '<div class="foot"><span class="dl' + (/남음|마감/.test(ddText(u.endAt)) ? ' hot' : '') + '">' + esc(ddText(u.endAt) || '마감 정보 없음') + '</span>' +
+      (u.url ? '<a href="' + esc(u.url) + '" target="_blank" rel="noopener">원본 보기</a>' : '') + '</div>' +
+    '</div>';
+}
+
+/** 27 / 26 비교표.
+ *  모집단위 하나가 두 줄을 차지한다. 대학·모집단위와 실시간 경쟁률(올해만)은 두 줄에 걸쳐 한 번만 보여준다. */
+function tableHTML() {
+  if (!S.watch.length) return '';
+  const R = (v) => (v == null ? '—' : (+v).toFixed(2));
+  const cmp = (a, b) => {   // 올해 값이 지난해보다 높으면 붉게
+    if (a == null || b == null) return '';
+    return a > b ? ' style="color:var(--up);font-weight:600"' : (a < b ? ' style="color:var(--safe)"' : '');
+  };
+
+  const body = S.watch.map((w, n) => {
+    const box = ITEMS[watchKey(w)];
+    const cur = box && box.cur, prev = box && box.prev;
+    const uni = (uOf(w.u) || {}).name || w.u;
+    const key = esc((w.u + ' ' + w.j + ' ' + w.d).toLowerCase());
+    const live = cur && cur.rate_final != null ? cur.rate_final : null;
+
+    const head =
+      '<td rowspan="2"><b>' + esc(uni) + '</b><br><span style="color:var(--ink-2)">' + esc(w.d) + '</span>' +
+      '<br><span style="color:var(--ink-3);font-size:11.5px">' + esc(w.j) + '</span></td>' +
+      '<td rowspan="2" class="num live' + (live == null ? '' : ' ' + band(live)) + '">' +
+        (live == null ? '—' : '<b>' + R(live) + '</b>') + '</td>';
+
+    const year = (label, it, other, isCur) =>
+      '<td class="yr' + (isCur ? ' cur' : '') + '">' + label + '</td>' +
+      '<td class="num">' + (it && it.recruitment_quota != null ? nfmt(it.recruitment_quota) : '—') + '</td>' +
+      '<td class="num"' + (isCur && it && other ? cmp(it.rate_d3, other.rate_d3) : '') + '>' + R(it && it.rate_d3) + '</td>' +
+      '<td class="num"' + (isCur && it && other ? cmp(it.rate_d2, other.rate_d2) : '') + '>' + R(it && it.rate_d2) + '</td>' +
+      '<td class="num"' + (isCur && it && other ? cmp(it.rate_d1, other.rate_d1) : '') + '>' + R(it && it.rate_d1) + '</td>';
+
+    return '<tr class="grp" data-k="' + key + '">' + head + year(YEAR, cur, prev, true) + '</tr>' +
+           '<tr class="sub" data-k="' + key + '">' + year(PREV_YEAR, prev, cur, false) + '</tr>';
+  }).join('');
+
+  return '<h2 class="sec">' + YEAR + ' · ' + PREV_YEAR + ' 비교 <small>선택한 모집단위 ' + S.watch.length + '개 · 붉은 값은 지난해보다 높음</small></h2>' +
+    '<div class="tablewrap"><div class="tabbar">' +
+      '<input id="tq" type="search" placeholder="대학·전형·학과 검색" aria-label="표 검색">' +
+      '<span class="count" id="tcount">' + S.watch.length + '개</span></div>' +
+    '<div class="scroll"><table class="cmp"><thead><tr>' +
+      '<th>대학 · 모집단위</th><th class="num">실시간 경쟁률</th><th>학년도</th>' +
+      '<th class="num">모집인원</th><th class="num">D-3</th><th class="num">D-2</th><th class="num">D-1</th>' +
+    '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
+}
+
+function filterTable() {
+  const q = $('tq').value.trim().toLowerCase();
+  let n = 0;
+  document.querySelectorAll('.tablewrap tbody tr').forEach((tr) => {
+    const hit = !q || (tr.dataset.k || '').includes(q);
+    tr.hidden = !hit;
+    if (hit && tr.classList.contains('grp')) n++;
+  });
+  $('tcount').textContent = n + '개';
+}
+
+function noteHTML() {
+  if (!IDX) return '';
+  return '<div class="box"><h3>이 숫자는 어디서 온 것인가</h3><ul>' +
+    '<li>퍼팩(PERFACT) 입시허브의 <b>공개 경쟁률 API</b>를 이 페이지가 직접 조회합니다. 중간 수집 서버가 없어 ' +
+      '화면의 값은 API 가 방금 준 값입니다.</li>' +
+    '<li><b>실시간 경쟁률</b>은 API 의 최신값(<code>rate_final</code>), <b>D-3·D-2·D-1</b> 은 원서접수 단계별 값입니다. ' +
+      '지원(환산) 인원은 <b>경쟁률 × 모집인원</b>으로 계산한 값이라 실제 지원자 수와 1~2명 차이가 날 수 있습니다.</li>' +
+    '<li>' + YEAR + '학년도와 ' + PREV_YEAR + '학년도를 같은 모집단위 기준으로 나란히 조회해 비교합니다. ' +
+      '지난해에 없던 모집단위는 &mdash; 로 표시됩니다.</li>' +
+    '<li>실시간 경쟁률 제공 <b>' + (IDX.live || 0) + '</b> / ' + (IDX.total || 0) + '개 대학 · ' +
+      '원본 기준시각 ' + esc(shortTime(IDX.built)) + '</li>' +
+    '</ul></div>';
+}
+
+function paintPanel() {
+  const wl = $('wlist');
+  if (!S.watch.length) {
+    wl.innerHTML = '<div class="help">선택한 대학이 없습니다.</div>';
+  } else {
+    wl.innerHTML = S.watch.map((w, n) => {
+      const u = uOf(w.u) || {};
+      return '<div class="wrow"><div class="g"><b>' + esc(w.d) + '</b><span>' + esc(u.name || w.u) + ' · ' + esc(w.j) + '</span></div>' +
+        '<button class="xbtn" data-wrm="' + n + '">×</button></div>';
+    }).join('');
+    wl.querySelectorAll('[data-wrm]').forEach((b) => b.addEventListener('click', () => removeWatch(+b.dataset.wrm)));
+  }
+  const st = $('srcstat');
+  if (IDX) {
+    st.innerHTML = '원본 기준시각 <b>' + esc(shortTime(IDX.built)) + '</b>' +
+      (IDX.crawledAt ? '<br>API 수집 <b>' + esc(shortTime(IDX.crawledAt)) + '</b>' : '') +
+      '<br>실시간 제공 <b>' + (IDX.live || 0) + '</b> / ' + (IDX.total || 0) + '개 대학' +
+      (IDX.fromSnapshot ? '<br><span style="color:var(--ink-3)">대학 목록은 저장된 스냅샷 사용</span>' : '');
+  } else {
+    st.textContent = 'API 에서 아직 정보를 받지 못했습니다.';
+  }
+  $('addbtn').disabled = !selUniv || S.watch.length >= MAXW;
+}
+
+function paintFoot() {
+  $('foot').innerHTML = '출처: 퍼팩(PERFACT) 입시허브 공개 경쟁률 API. 원본은 각 대학 실시간 접수현황입니다. ' +
+    '<span class="warn">경쟁률은 원서접수 진행 중 계속 바뀌며, 마감 직전 몇 시간에 가장 크게 움직입니다. 마감 시각과 최종 경쟁률은 반드시 각 대학 입학처 공고로 확인하세요.</span>' +
+    '<br>접수 마감 시각은 API 가 대학별로 제공한 값을 그대로 씁니다.';
+}
+
+/* ---------- 스크롤 안내 배지 ---------- */
+function initScrollHints() {
+  const hintL = $('hintL'), hintR = $('hintR'), cta = document.querySelector('.cta');
+  const wide = () => matchMedia('(min-width:901px)').matches;
+  const EDGE = 24;
+  function state(sc) {
+    const h = sc === document.scrollingElement ? innerHeight : sc.clientHeight;
+    const top = sc === document.scrollingElement ? (scrollY || document.documentElement.scrollTop) : sc.scrollTop;
+    return { can: sc.scrollHeight - h > EDGE, atEnd: top + h >= sc.scrollHeight - EDGE };
+  }
+  function show(el, sc, rect, bottom) {
+    const s = state(sc);
+    el.hidden = !s.can;
+    if (!s.can) return;
+    el.classList.toggle('out', s.atEnd);
+    el.style.left = (rect.left + rect.width / 2) + 'px';
+    el.style.bottom = bottom + 'px';
+    el._sc = sc;
+  }
+  function update() {
+    const fs = $('formscroll'), rc = $('rightcol');
+    if (wide()) {
+      if (fs && cta) show(hintL, fs, fs.getBoundingClientRect(), innerHeight - cta.getBoundingClientRect().top + 12);
+      else hintL.hidden = true;
+      if (rc) show(hintR, rc, rc.getBoundingClientRect(), 18);
+      else hintR.hidden = true;
+    } else {
+      hintL.hidden = true;
+      // 좁은 화면에서는 하단 고정 버튼 바 위로 띄운다
+      const r = cta ? cta.getBoundingClientRect() : null;
+      const pinned = r && r.top > 0 && r.top < innerHeight && r.bottom > innerHeight - 4;
+      const over = pinned ? Math.round(innerHeight - r.top + 12) : 18;
+      show(hintR, document.scrollingElement, { left: 0, width: innerWidth }, over);
+    }
+  }
+  [hintL, hintR].forEach((el) => el.addEventListener('click', () => {
+    const sc = el._sc;
+    if (!sc) return;
+    const h = sc === document.scrollingElement ? innerHeight : sc.clientHeight;
+    if (sc === document.scrollingElement) scrollBy({ top: h * 0.8, behavior: 'smooth' });
+    else sc.scrollBy({ top: h * 0.8, behavior: 'smooth' });
+  }));
+  let raf = 0;
+  const kick = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(update); };
+  ['formscroll', 'rightcol'].forEach((id) => { const e = $(id); if (e) e.addEventListener('scroll', kick, { passive: true }); });
+  addEventListener('scroll', kick, { passive: true });
+  addEventListener('resize', kick);
+  if (window.ResizeObserver) {
+    const ro = new ResizeObserver(kick);
+    ['formscroll', 'rightcol', 'results'].forEach((id) => { const e = $(id); if (e) ro.observe(e); });
+  }
+  window.__hints = kick;
+  kick();
+}
+
+/* ---------- 부팅 ---------- */
+let booted = false;
+function boot() {
+  if (booted) return;
+  booted = true;
+  load();
+
+  initCombo();
+  $('jsel').addEventListener('change', onJungPick);
+  $('addbtn').addEventListener('click', addWatch);
+  $('clearw').addEventListener('click', () => { S.watch = []; save(); render(); toast('선택한 대학 목록을 비웠습니다.'); });
+  $('reset').addEventListener('click', () => {
+    if (!confirm('선택한 대학 목록과 갱신 설정을 초기화할까요?')) return;
+    S = { watch: [], auto: true, period: 300, sort: 'add' };
+    save();
+    syncSeg();
+    render();
+    scheduleNext();
+  });
+  $('autochk').addEventListener('change', () => { S.auto = $('autochk').checked; save(); scheduleNext(); });
+  document.querySelectorAll('#periodseg button').forEach((b) => b.addEventListener('click', () => {
+    S.period = +b.dataset.v; save(); syncSeg(); render(); scheduleNext();
+  }));
+  document.querySelectorAll('#sortseg button').forEach((b) => b.addEventListener('click', () => {
+    S.sort = b.dataset.v; save(); syncSeg(); render();
+  }));
+
+  syncSeg();
+  loadHist();
+  initScrollHints();
+  render();
+  if (migrated) { save(); toast('데이터 출처가 API 로 바뀌어 이전 선택 목록을 비웠습니다. 다시 추가해 주세요.', 6000); }
+  refresh(true);   // 첫 로드
+}
+
+function syncSeg() {
+  $('autochk').checked = !!S.auto;
+  document.querySelectorAll('#periodseg button').forEach((b) => b.setAttribute('aria-pressed', String(+b.dataset.v === S.period)));
+  document.querySelectorAll('#sortseg button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === S.sort)));
+}
+
+boot();
+
+</script>
 </body>
 </html>
