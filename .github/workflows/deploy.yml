@@ -1,0 +1,138 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    # 경쟁률 JSON 만 고쳐서 커밋하는 경우가 대부분이므로 경로 필터는 두지 않는다.
+  workflow_dispatch:
+
+# GITHUB_TOKEN 에 Pages 배포 권한 부여
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 배포는 항상 최신 커밋 하나만 살린다. 진행 중인 배포는 취소하지 않는다.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: 데이터 파일 검증
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: JSON 문법 검사
+        run: |
+          for f in data/*.json; do
+            echo "· $f"
+            python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$f"
+          done
+
+      - name: susi_ratio.json 구조 검사
+        run: |
+          python3 - <<'PY'
+          import json, sys
+
+          d = json.load(open('data/susi_ratio.json', encoding='utf-8'))
+          errs = []
+
+          if 'universities' not in d or not isinstance(d['universities'], list):
+              errs.append('universities 배열이 없습니다')
+          else:
+              if not d['universities']:
+                  errs.append('universities 가 비어 있습니다')
+              for i, u in enumerate(d['universities']):
+                  where = f"universities[{i}]"
+                  name = u.get('university')
+                  if not name:
+                      errs.append(f'{where}: university 이름이 없습니다')
+                      continue
+                  seasons = u.get('seasons')
+                  if not isinstance(seasons, list) or not seasons:
+                      errs.append(f'{name}: seasons 가 없습니다')
+                      continue
+                  for s in seasons:
+                      y = s.get('year')
+                      if not isinstance(y, int):
+                          errs.append(f'{name}: season.year 가 정수가 아닙니다 ({y!r})')
+                      if s.get('kind') not in ('live', 'past'):
+                          errs.append(f'{name} {y}: kind 는 live 또는 past 여야 합니다 ({s.get("kind")!r})')
+                      if not isinstance(s.get('details'), list):
+                          errs.append(f'{name} {y}: details 배열이 없습니다')
+                          continue
+                      for det in s['details']:
+                          if not det.get('name'):
+                              errs.append(f'{name} {y}: 전형 name 이 없습니다')
+                          for un in det.get('units', []):
+                              if not un.get('unit'):
+                                  errs.append(f'{name} {y} {det.get("name")}: 모집단위 unit 이 없습니다')
+                              for k in ('recruit', 'applied'):
+                                  v = un.get(k)
+                                  if v is not None and not isinstance(v, (int, float)):
+                                      errs.append(f'{name} {y} {un.get("unit")}: {k} 가 숫자가 아닙니다 ({v!r})')
+
+          if errs:
+              print('검증 실패:')
+              for e in errs[:50]:
+                  print('  ✗', e)
+              if len(errs) > 50:
+                  print(f'  … 외 {len(errs) - 50}건')
+              sys.exit(1)
+
+          n = len(d['universities'])
+          total = sum(len(s.get('details', [])) for u in d['universities'] for s in u['seasons'])
+          print(f'✓ 대학 {n}개 · 시즌 전형 {total}건 · generatedAt {d.get("generatedAt")}')
+          PY
+
+      - name: ipgyeol.json 구조 검사
+        run: |
+          python3 - <<'PY'
+          import json, sys
+
+          d = json.load(open('data/ipgyeol.json', encoding='utf-8'))
+          for k in ('univs', 'haks', 'jungs', 'rows'):
+              if k not in d:
+                  sys.exit(f'ipgyeol.json: {k} 키가 없습니다')
+
+          nu, nh, nj = len(d['univs']), len(d['haks']), len(d['jungs'])
+          for i, r in enumerate(d['rows']):
+              if len(r) != 16:
+                  sys.exit(f'rows[{i}]: 길이가 16이 아닙니다 ({len(r)})')
+              if not (0 <= r[0] < nu and 0 <= r[1] < nh and 0 <= r[2] < nj):
+                  sys.exit(f'rows[{i}]: 인덱스가 범위를 벗어났습니다 {r[:3]}')
+
+          print(f'✓ 대학 {nu} · 학과 {nh} · 전형 {nj} · 행 {len(d["rows"])}')
+          PY
+
+      - name: index.html 데이터 참조 확인
+        run: |
+          for f in data/susi_ratio.json data/ipgyeol.json; do
+            grep -q "$f" index.html || { echo "index.html 이 $f 를 참조하지 않습니다"; exit 1; }
+          done
+          echo "✓ index.html 데이터 참조 정상"
+
+  deploy:
+    name: Pages 배포
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pages 설정
+        uses: actions/configure-pages@v5
+
+      - name: 정적 파일 업로드
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # 빌드 단계 없음 — 저장소 루트를 그대로 올린다.
+          path: .
+
+      - name: 배포
+        id: deployment
+        uses: actions/deploy-pages@v4
