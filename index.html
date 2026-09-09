@@ -192,7 +192,8 @@ th{font-size:10.5px;color:var(--ink-2);letter-spacing:.05em;text-transform:upper
 td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums}
 tbody tr.pinned{background:var(--seal-soft)}
 /* 27 · 26 비교표 */
-table.cmp{min-width:660px}
+table.cmp{min-width:820px}
+table.cmp td.cut{font-family:var(--mono);color:var(--ink-2)}
 table.cmp td,table.cmp th{vertical-align:middle}
 table.cmp tr.grp td{border-top:2px solid var(--line)}
 table.cmp tr.sub td{border-top:1px dashed var(--line-2);background:var(--paper-3)}
@@ -503,6 +504,186 @@ async function fetchItem(w, year) {
   return (d && d.item) || null;
 }
 
+/* ---------- 지난해(2026) 이름 맞추기 ----------
+ * 같은 대학·전형·학과인데 학년도마다 표기가 다르다. 실제 API 를 비교해 보면
+ *   대학 : 2027 "가천대학교"           ↔ 2026 "가천대(글로벌)" / "가천대(메디컬)"   (캠퍼스 분리)
+ *          2027 "한국교통대학교"        ↔ 2026 "국립한국교통대(충주)" 등            ("국립" 접두어)
+ *   전형 : 2027 "논술【논술우수자전형】" ↔ 2026 "논술우수자"                         (계열 접두어)
+ *   학과 : 2027 "실용음악과(건반)"       ↔ 2026 "실용음악과-건반"
+ * 그래서 (1) 대학명은 아래 매핑표 + 2026 대학목록으로 후보를 만들고,
+ *        (2) 전형·학과는 표기를 정규화해 점수로 고르고,
+ *        (3) 후보를 순서대로 lookup 해 첫 성공을 쓴다. 못 찾으면 비교표에 "—" 로 남는다.
+ */
+
+/* 2027 대학명(캠퍼스·"학교" 떼고 남은 이름) → 2026 대학명(캠퍼스 괄호 떼고 남은 이름).
+ * 캠퍼스 분리(가천대 → 글로벌/메디컬, 가톨릭대 → 성심/성의/성신)는 2026 대학목록에서
+ * 자동으로 후보가 붙으므로 여기 적지 않는다. 여기 적는 것은 약칭 자체가 달라진 경우뿐이다.
+ * 새 학년도에 표기가 또 바뀌면 이 표만 고치면 된다. */
+const PREV_ALIAS = {
+  '감리교신학대': '감리교신대',
+  '경인교육대': '경인교대',
+  '공주교육대': '공주교대',
+  '광주교육대': '광주교대',
+  '대구교육대': '대구교대',
+  '부산교육대': '부산교대',
+  '서울교육대': '서울교대',
+  '전주교육대': '전주교대',
+  '진주교육대': '진주교대',
+  '청주교육대': '청주교대',
+  '춘천교육대': '춘천교대',
+  '대전신학대': '대전신대',
+  '서울신학대': '서울신대',
+  '장로회신학대': '장로회신대',
+  '호남신학대': '호남신대',
+  '아세아연합신학대': '아신대',
+  '한국침례신학대': '침례신대',
+  '부산외국어대': '부산외대',
+  '예원예술대': '예원예대',
+  '추계예술대': '추계예대',
+  '서울과기대': '서울과학기술대',
+  '포항공과대': '포항공대',
+  '금오공과대': '국립금오공대',
+  '국립금오공과대': '국립금오공대',
+  '한국기술교육대': '한국기술교대',
+  '한국체육대': '한국체대',
+  '목포대': '국립목포대',
+  '목포해양대': '국립목포해양대',
+  '한국해양대': '국립한국해양대',
+  '부경대': '국립부경대',
+  '창원대': '국립창원대',
+  '한국교통대': '국립한국교통대',
+};
+
+let PREVU;                       // 2026 대학명 인덱스
+async function prevUnivIndex() {
+  if (PREVU) return PREVU;
+  const m = new Map(), set = new Set();
+  try {
+    const names = (await apiGet('/universities?' + qs({ year: PREV_YEAR })) || {}).universities || [];
+    for (const n of names) {
+      set.add(n);
+      const p = n.match(/^(.*?)\((.*)\)$/);
+      const b = (p ? p[1] : n).trim(), c = p ? p[2].trim() : '';
+      if (!m.has(b)) m.set(b, []);
+      m.get(b).push({ name: n, c });
+    }
+  } catch (e) { /* 못 받으면 비교값 없이 동작 */ }
+  PREVU = { m, set };
+  return PREVU;
+}
+
+function prevBase(name) {
+  let s = String(name).trim(), c = '';
+  const k = s.match(/^(.*?)\s+(\S+)캠퍼스$/);  if (k) { s = k[1]; c = k[2]; }
+  const p = s.match(/^(.*?)\((.*)\)$/);        if (p) { s = p[1].trim(); c = c || p[2].trim(); }
+  s = s.replace(/대학교$/, '대').trim();
+  return { b: PREV_ALIAS[s] || s, c };
+}
+
+/** 2027 대학명 → 시도할 2026 대학명들 (우선순위 순) */
+async function prevUnivNames(name) {
+  const ix = await prevUnivIndex();
+  if (ix.set.has(name)) return [name];
+  const { b, c } = prevBase(name);
+  const list = ix.m.get(b);
+  if (!list || !list.length) return [];
+  if (c) {
+    const hit = list.filter((x) => x.c === c || x.c.indexOf(c) >= 0 || (x.c && c.indexOf(x.c) >= 0));
+    if (hit.length) return hit.map((x) => x.name);
+  }
+  return list.map((x) => x.name);
+}
+
+/* 전형·학과 이름 맞추기 */
+const CATS = ['학생부교과', '학생부종합', '실기/실적', '실기위주', '실적위주', '논술위주', '논술', '교과', '종합', '실기', '실적'];
+const catOf = (s) => { for (const c of CATS) if (String(s).indexOf(c) >= 0) return c.replace(/\/.*/, ''); return ''; };
+
+/** 계열 접두어·배점 꼬리·"정원내" 같은 군더더기를 걷어낸 알맹이 */
+function nameCore(s) {
+  let t = String(s).trim();
+  const m = t.match(/【(.+?)】/);                     if (m) t = m[1];       // 학생부종합【광운참빛인재…】
+  t = t.replace(/^\s*\[[^\]]*\]\s*/, '');                                   // [학생부교과] …
+  t = t.replace(/\s+-\s+.*$/, '');                                          // … - 교과100%
+  t = t.replace(/\((?:[^()]*(?:학생부교과|학생부종합|실기위주|실적위주|논술위주|실기\/실적|계열)[^()]*)\)/g, '');
+  t = t.replace(/^\s*정원\s*내(\s*모집)?\s*/, '');
+  t = t.replace(/(?:실기|실적|논술)?\s*[\/·]?\s*(?:실기|실적)?위주\s*/g, '');
+  const c = t.match(/^(?:학생부교과|학생부종합|실기\/실적|논술)\s*[（(](.+)[）)]\s*$/);
+  if (c) t = c[1];                                                          // 학생부교과(고교추천전형)
+  t = t.replace(/[（(]\s*정원\s*내\s*[）)]/g, '');
+  return t.trim();
+}
+const nameKey = (s) => nameCore(s).replace(/전형|특별|선발/g, '').replace(/[^0-9A-Za-z가-힣]/g, '').toLowerCase();
+
+const grams = (s) => { const a = []; for (let i = 0; i < s.length - 1; i++) a.push(s.slice(i, i + 2)); return a.length ? a : [s]; };
+function dice(a, b) {
+  if (a === b) return 1;
+  const A = grams(a), B = grams(b).slice();
+  let h = 0;
+  for (const x of A) { const i = B.indexOf(x); if (i >= 0) { B.splice(i, 1); h++; } }
+  return (2 * h) / (A.length + grams(b).length);
+}
+/** 0=다른 이름, 1=같은 이름. 어설픈 매칭으로 엉뚱한 값이 붙지 않게 문턱을 높게 둔다. */
+function simScore(a, b) {
+  const x = nameKey(a), y = nameKey(b);
+  if (!x || !y) return 0;
+  if (x === y) return 1;
+  const lo = x.length < y.length ? x : y, hi = x.length < y.length ? y : x;
+  if (hi.indexOf(lo) >= 0) { const r = lo.length / hi.length; return r >= 0.6 ? 0.9 * r + 0.1 : 0; }
+  const d = dice(x, y);
+  return d >= 0.8 ? d * 0.9 : 0;
+}
+function rankNames(want, list) {
+  const c = catOf(want);
+  return (list || []).map((b) => {
+    let s = simScore(want, b);
+    if (s && c && String(b).indexOf(c) >= 0) s += 0.05;   // 교과/종합이 갈리는 동명 전형 구분
+    return { name: b, s };
+  }).filter((x) => x.s > 0).sort((p, r) => r.s - p.s);
+}
+
+const PREV_ADM = new Map();      // 2026 대학명 → 전형목록
+const PREV_DEP = new Map();      // 2026 대학명|전형 → 학과목록
+const PREV_HIT = new Map();      // watchKey → 찾아낸 2026 좌표 (없으면 null)
+
+async function prevAdms(u) {
+  if (!PREV_ADM.has(u)) {
+    const a = (await apiGet('/admissions?' + qs({ year: PREV_YEAR, university_name: u })) || {}).admissions || [];
+    PREV_ADM.set(u, a.map((x) => (typeof x === 'string' ? x : x.admission_name)));
+  }
+  return PREV_ADM.get(u);
+}
+async function prevDeps(u, j) {
+  const k = u + '|' + j;
+  if (!PREV_DEP.has(k)) {
+    PREV_DEP.set(k, (await apiGet('/departments?' + qs({ year: PREV_YEAR, university_name: u, admission_name: j })) || {}).departments || []);
+  }
+  return PREV_DEP.get(k);
+}
+
+/** 워치 항목 하나의 지난해 값. 한 번 찾은 좌표는 재조회 때 그대로 쓴다. */
+async function fetchPrevItem(w) {
+  const key = watchKey(w);
+  if (PREV_HIT.has(key)) {
+    const h = PREV_HIT.get(key);
+    return h ? await fetchItem(h, PREV_YEAR).catch(() => null) : null;
+  }
+  for (const u of await prevUnivNames(w.u)) {
+    let adms;
+    try { adms = await prevAdms(u); } catch (e) { continue; }
+    for (const a of rankNames(w.j, adms).slice(0, 3)) {
+      let deps;
+      try { deps = await prevDeps(u, a.name); } catch (e) { continue; }
+      const d = rankNames(w.d, deps);
+      if (!d.length) continue;
+      const cand = { u, j: a.name, d: d[0].name };
+      const it = await fetchItem(cand, PREV_YEAR).catch(() => null);
+      if (it) { PREV_HIT.set(key, cand); return it; }
+    }
+  }
+  PREV_HIT.set(key, null);
+  return null;
+}
+
 /* ---------- 시간별 이력 (브라우저에 쌓는다) ----------
  * API 는 D-3~D-day 단계별 값만 주므로, 그 사이 움직임은 이 브라우저가 본 값으로 채운다.
  */
@@ -532,7 +713,7 @@ async function refresh(first) {
         // 올해(실시간)와 지난해(비교)를 같이 받는다
         const [cur, prevYear] = await Promise.all([
           fetchItem(w, YEAR),
-          fetchItem(w, PREV_YEAR).catch(() => null),
+          fetchPrevItem(w).catch(() => null),
         ]);
         ITEMS[k] = { cur, prev: prevYear };
         if (cur) pushHist(k, cur.live_announced_at || IDX.built, cur.rate_final);
@@ -935,6 +1116,15 @@ function cardHTML(o) {
 function tableHTML() {
   if (!S.watch.length) return '';
   const R = (v) => (v == null ? '—' : (+v).toFixed(2));
+  // 합격컷1 = 상위 50% 입결, 합격컷2 = 상위 70% 입결. 문자열("3.78" · "5등급")로 오고
+  // 아직 발표 전이면 null 또는 "0" 이다.
+  const cut = (it, n) => {
+    if (!it) return '—';
+    const v = n === 1 ? it.pass_cut1_grade : it.pass_cut2_grade;
+    if (v == null || v === '' || String(v).trim() === '0' || +v === 0) return '—';
+    const basis = n === 1 ? it.pass_cut1_basis : it.pass_cut2_basis;
+    return '<span' + (basis ? ' title="' + esc('기준 ' + basis) + '"' : '') + '>' + esc(String(v)) + '</span>';
+  };
   const cmp = (a, b) => {   // 올해 값이 지난해보다 높으면 붉게
     if (a == null || b == null) return '';
     return a > b ? ' style="color:var(--up);font-weight:600"' : (a < b ? ' style="color:var(--safe)"' : '');
@@ -958,19 +1148,22 @@ function tableHTML() {
       '<td class="num">' + (it && it.recruitment_quota != null ? nfmt(it.recruitment_quota) : '—') + '</td>' +
       '<td class="num"' + (isCur && it && other ? cmp(it.rate_d3, other.rate_d3) : '') + '>' + R(it && it.rate_d3) + '</td>' +
       '<td class="num"' + (isCur && it && other ? cmp(it.rate_d2, other.rate_d2) : '') + '>' + R(it && it.rate_d2) + '</td>' +
-      '<td class="num"' + (isCur && it && other ? cmp(it.rate_d1, other.rate_d1) : '') + '>' + R(it && it.rate_d1) + '</td>';
+      '<td class="num"' + (isCur && it && other ? cmp(it.rate_d1, other.rate_d1) : '') + '>' + R(it && it.rate_d1) + '</td>' +
+      '<td class="num cut">' + cut(it, 1) + '</td>' +
+      '<td class="num cut">' + cut(it, 2) + '</td>';
 
     return '<tr class="grp" data-k="' + key + '">' + head + year(YEAR, cur, prev, true) + '</tr>' +
            '<tr class="sub" data-k="' + key + '">' + year(PREV_YEAR, prev, cur, false) + '</tr>';
   }).join('');
 
-  return '<h2 class="sec">' + YEAR + ' · ' + PREV_YEAR + ' 비교 <small>선택한 모집단위 ' + S.watch.length + '개 · 붉은 값은 지난해보다 높음</small></h2>' +
+  return '<h2 class="sec">' + YEAR + ' · ' + PREV_YEAR + ' 비교 <small>선택한 모집단위 ' + S.watch.length + '개 · 붉은 값은 지난해보다 높음 · 입결은 지난해 확정치</small></h2>' +
     '<div class="tablewrap"><div class="tabbar">' +
       '<input id="tq" type="search" placeholder="대학·전형·학과 검색" aria-label="표 검색">' +
       '<span class="count" id="tcount">' + S.watch.length + '개</span></div>' +
     '<div class="scroll"><table class="cmp"><thead><tr>' +
       '<th>대학 · 모집단위</th><th class="num">실시간 경쟁률</th><th>학년도</th>' +
       '<th class="num">모집인원</th><th class="num">D-3</th><th class="num">D-2</th><th class="num">D-1</th>' +
+      '<th class="num">입결50%</th><th class="num">입결70%</th>' +
     '</tr></thead><tbody>' + body + '</tbody></table></div></div>';
 }
 
@@ -993,7 +1186,11 @@ function noteHTML() {
     '<li><b>실시간 경쟁률</b>은 API 의 최신값(<code>rate_final</code>), <b>D-3·D-2·D-1</b> 은 원서접수 단계별 값입니다. ' +
       '지원(환산) 인원은 <b>경쟁률 × 모집인원</b>으로 계산한 값이라 실제 지원자 수와 1~2명 차이가 날 수 있습니다.</li>' +
     '<li>' + YEAR + '학년도와 ' + PREV_YEAR + '학년도를 같은 모집단위 기준으로 나란히 조회해 비교합니다. ' +
-      '지난해에 없던 모집단위는 &mdash; 로 표시됩니다.</li>' +
+      '학년도마다 대학·전형·학과 표기가 달라서(예: <code>가천대학교</code> ↔ <code>가천대(글로벌)</code>) ' +
+      '매핑표와 이름 정규화로 짝을 찾습니다. 짝이 없거나 지난해에 없던 모집단위는 &mdash; 로 표시됩니다.</li>' +
+    '<li><b>입결50% / 입결70%</b> 은 API 의 합격컷1·합격컷2(합격자 상위 50% · 70% 성적)입니다. ' +
+      '접수 중인 ' + YEAR + '학년도에는 값이 없고, 확정된 ' + PREV_YEAR + '학년도 줄에만 나타납니다. ' +
+      '숫자에 마우스를 올리면 산출 기준이 보입니다.</li>' +
     '<li>실시간 경쟁률 제공 <b>' + (IDX.live || 0) + '</b> / ' + (IDX.total || 0) + '개 대학 · ' +
       '원본 기준시각 ' + esc(shortTime(IDX.built)) + '</li>' +
     '</ul></div>';
