@@ -9,6 +9,7 @@ index.html                     대시보드 (의존성 없음, 폰트만 외부)
 data/susi_ratio.json           경쟁률 — 수동 업데이트 대상
 data/ipgyeol.json              입결 50%·70% 컷 (2024~2026), 학년도 단위로만 갱신
 tools/normalize_susi.py        수집기가 놓친 표 구조를 되돌리는 정규화 (아래 참고)
+tools/build_ipgyeol.py         어디가 발표자료에서 data/ipgyeol.json 재생성
 .github/workflows/deploy.yml   main push 시 검증 → Pages 배포
 ```
 
@@ -74,14 +75,29 @@ universities[]
 문자열 중복을 없앤 인덱스 형식입니다. 한 행이 (대학 × 학과 × 전형) 하나에 대응합니다.
 
 ```
-univs[], haks[], jungs[]   이름 사전
+univs[], regions[], haks[], jungs[]   이름 사전 (regions[i] = univs[i] 의 권역)
+years[] = [2024, 2025, 2026]
+cols[]  = ["모집", "충원", "경쟁률", "g50", "g70"]
 rows[]  = [ univIdx, hakIdx, jungIdx, edu(0 교과 / 1 종합),
-            2024: g50, g70, 모집, 경쟁률,
-            2025: g50, g70, 모집, 경쟁률,
-            2026: g50, g70, 모집, 경쟁률 ]
+            2024: 모집, 충원, 경쟁률, g50, g70,
+            2025: 모집, 충원, 경쟁률, g50, g70,
+            2026: 모집, 충원, 경쟁률, g50, g70 ]
 ```
 
-g50 / g70 = 최종등록자 교과등급 상위 50% · 70% 지점. 출처는 대입정보포털 어디가 발표자료입니다.
+한 행이 (대학 × 학과 × 전형) 하나에 대응하므로, `susi_ratio.json` 에서 고른 **대학·전형·모집단위**로 그 세 연도의 다섯 값에 바로 닿습니다. 행 길이는 `4 + years×cols` 로 정해지고 Actions 가 그 폭을 검사합니다.
+
+- **모집 / 충원** = 모집인원과 충원(추가합격) 인원
+- **경쟁률** = 지원자 ÷ 모집인원
+- **g50 / g70** = 최종등록자 교과등급 상위 50% · 70% 지점
+
+출처는 대입정보포털 어디가 발표자료(2023~2026)를 정리한 <https://ppakangna-svg.github.io/parkhanmin/> 이고, `tools/build_ipgyeol.py` 로 다시 만듭니다.
+
+```bash
+python3 tools/build_ipgyeol.py           # 출처를 내려받아 data/ipgyeol.json 재생성
+python3 tools/build_ipgyeol.py --check   # 출처와 달라졌는지만 확인
+```
+
+한 (대학·학과·전형·연도) 에 모집군이 여럿인 경우(395건)는 **모집·충원은 합계, 경쟁률은 지원자합÷모집합, 등급컷은 모집인원 가중평균**으로 합칩니다. 예전 파일은 이때 한쪽만 골라 담아 모집인원이 실제보다 작게 잡히는 행이 있었습니다.
 
 ## 두 자료를 잇는 방식
 

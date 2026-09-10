@@ -114,18 +114,27 @@ jobs:
           import json, sys
 
           d = json.load(open('data/ipgyeol.json', encoding='utf-8'))
-          for k in ('univs', 'haks', 'jungs', 'rows'):
+          for k in ('univs', 'haks', 'jungs', 'rows', 'years', 'cols'):
               if k not in d:
                   sys.exit(f'ipgyeol.json: {k} 키가 없습니다')
 
+          # 행 = [univIdx, hakIdx, jungIdx, edu] + 연도마다 cols 만큼
+          width = 4 + len(d['years']) * len(d['cols'])
           nu, nh, nj = len(d['univs']), len(d['haks']), len(d['jungs'])
+          if len(d['regions']) != nu:
+              sys.exit(f'regions 가 대학 수와 다릅니다 ({len(d["regions"])} vs {nu})')
           for i, r in enumerate(d['rows']):
-              if len(r) != 16:
-                  sys.exit(f'rows[{i}]: 길이가 16이 아닙니다 ({len(r)})')
+              if len(r) != width:
+                  sys.exit(f'rows[{i}]: 길이가 {width} 가 아닙니다 ({len(r)})')
               if not (0 <= r[0] < nu and 0 <= r[1] < nh and 0 <= r[2] < nj):
                   sys.exit(f'rows[{i}]: 인덱스가 범위를 벗어났습니다 {r[:3]}')
+              if r[3] not in (0, 1):
+                  sys.exit(f'rows[{i}]: edu 는 0 또는 1 이어야 합니다 ({r[3]!r})')
 
-          print(f'✓ 대학 {nu} · 학과 {nh} · 전형 {nj} · 행 {len(d["rows"])}')
+          cells = sum(1 for r in d['rows'] for k in range(4, width, len(d['cols'])) if r[k] is not None)
+          cuts = sum(1 for r in d['rows'] for k in range(4, width, len(d['cols'])) if r[k + 3] is not None)
+          print(f'✓ 대학 {nu} · 학과 {nh} · 전형 {nj} · 행 {len(d["rows"])} '
+                f'({", ".join(str(y) for y in d["years"])}) · 모집 {cells:,} · 등급컷 {cuts:,}')
           PY
 
       - name: index.html 데이터 참조 확인
