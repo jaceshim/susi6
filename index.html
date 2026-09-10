@@ -130,6 +130,9 @@ aside{height:100%;min-height:0;min-width:0}
 .help{font-size:12px;color:var(--ink-3);margin:8px 0 0;line-height:1.5}
 
 /* 콤보박스 — 대학·전형·모집단위가 같은 조작감을 갖는다 (검색 → 제안 → 한 개 선택) */
+.wide{width:100%;margin-top:9px;padding:8px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--fit);font-weight:600;font-size:13px;cursor:pointer}
+.wide:hover:not(:disabled){border-color:var(--seal);background:var(--seal-soft)}
+.wide:disabled{color:var(--ink-3);font-weight:400;cursor:not-allowed;background:var(--paper-3)}
 .combo{position:relative}
 .combo input{width:100%;max-width:100%;min-width:0;padding:8px 30px 8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);text-overflow:ellipsis}
 .combo input:disabled{background:var(--paper-3);color:var(--ink-3);cursor:not-allowed}
@@ -202,7 +205,12 @@ tr.tot td{font-weight:700;background:var(--paper-3);border-top:2px solid var(--l
 .card tr.now td:last-child{border-radius:0 6px 6px 0}
 .card tr.nodata td{color:var(--ink-3)}
 .card .cardfoot{font-size:11.5px;color:var(--ink-3);border-top:1px dashed var(--line-2);padding-top:7px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-.card .rm{margin-left:auto;flex:none;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink-3);font-size:11px;cursor:pointer}
+.card[data-open]{cursor:pointer}
+.card[data-open]:hover{border-color:var(--seal)}
+.card .acts{margin-left:auto;flex:none;display:flex;gap:6px}
+.card .open{flex:none;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--fit);font-size:11px;font-weight:600;cursor:pointer}
+.card .open:hover{border-color:var(--seal);background:var(--seal-soft)}
+.card .rm{flex:none;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink-3);font-size:11px;cursor:pointer}
 .card .rm:hover{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
 .card .title .u{font-size:12px;font-weight:600;color:var(--seal)}
 .tag{display:inline-block;padding:1px 7px;border-radius:5px;font-size:11px;border:1px solid var(--line);color:var(--ink-2);background:var(--paper)}
@@ -257,6 +265,7 @@ footer code{font-family:var(--mono);font-size:11px;background:var(--paper-3);pad
           <ul class="pop" id="univpop" role="listbox" aria-label="대학 목록" hidden></ul>
         </div>
         <p class="help" id="univnote"></p>
+        <button class="wide" id="showratio" type="button" disabled>전형별 경쟁률 보기</button>
       </section>
 
       <section>
@@ -342,7 +351,7 @@ let IDX = null;                 // 정규화 인덱스
 /* 선택은 대학·전형·모집단위 각각 한 개. 담은 모집단위는 basket 에 쌓인다.
    basket 항목은 {k, univKey, rowKey} — 행 자체가 아니라 키만 들고 있다가
    렌더할 때 dataOf() 로 되찾는다(대학 데이터가 갱신돼도 어긋나지 않게). */
-let S = {univ:null, jung:null, unit:null, sort:'ratio-desc', onlyIp:false, basket:[]};
+let S = {univ:null, jung:null, unit:null, sort:'ratio-desc', onlyIp:false, basket:[], focus:null};
 
 /* ── 정규화 ─────────────────────────────────────────────── */
 function normUniv(s){
@@ -780,7 +789,7 @@ function basketRows(){
     const uv = IDX.list.find(u => u.key === b.univKey);
     if (!uv || !uv.ratio) continue;
     const r = dataOf(uv).rows.find(x => unitKey(x) === b.rowKey);
-    if (r) out.push(Object.assign({}, r, {bk: b.k, univName: uv.name}));
+    if (r) out.push(Object.assign({}, r, {bk: b.k, univName: uv.name, univKey: uv.key}));
   }
   return out;
 }
@@ -865,6 +874,7 @@ function initUI(){
   $('sortsel').addEventListener('change', () => { S.sort = $('sortsel').value; render(); });
   $('onlyipgyeol').addEventListener('change', () => { S.onlyIp = $('onlyipgyeol').checked; render(); });
   $('add').addEventListener('click', addPicked);
+  $('showratio').addEventListener('click', () => { if (S.univ) setFocus(S.univ); });
   $('reset').addEventListener('click', () => {
     setJung(null);
     S.sort = 'ratio-desc'; $('sortsel').value = 'ratio-desc';
@@ -924,6 +934,10 @@ function refreshPanel(){
     : S.unit ? '아래 [추가] 를 누르면 대시보드에 담깁니다.'
     : '비교할 모집단위를 고르세요.';
 
+  const sr = $('showratio');
+  sr.disabled = !(uv && uv.ratio);
+  sr.textContent = (uv && S.focus === uv.key) ? '전형별 경쟁률 보는 중' : '전형별 경쟁률 보기';
+
   COMBO.univ.sync(); COMBO.jung.sync(); COMBO.unit.sync();
   $('add').disabled = !(uv && uv.ratio && S.jung && S.unit);
   renderTimeline();
@@ -948,24 +962,21 @@ function renderTimeline(){
 
 /* ── 렌더 ───────────────────────────────────────────────── */
 function render(){
-  const uv = curUniv(), out = $('results');
+  const out = $('results');
   const parts = [dashSection()];                      // 담은 모집단위 비교가 언제나 맨 위
-
-  if (uv && !uv.ratio){
-    parts.push(`<div class="empty"><b>${esc(uv.name)} — 경쟁률 데이터 없음</b>
-      이 대학은 아직 <code>data/susi_ratio.json</code> 에 수집되지 않았습니다.<br>
-      파일을 업데이트하고 커밋하면 배포 후 자동으로 표시됩니다.
-      ${uv.trackIdx >= 0 ? '<br><br>입결(2024~2026) 자료는 있으므로, 경쟁률만 채우면 4개년 비교가 완성됩니다.' : ''}
-    </div>`);
-  } else if (uv){
-    const {cur, rows} = dataOf(uv);
-    parts.push(cur ? topSection(uv, cur, rows)
-                   : '<div class="empty"><b>표시할 시즌 데이터가 없습니다</b></div>');
-  }
+  if (S.focus) parts.push(focusSection());            // 대학 경쟁률은 펼쳤을 때만
   out.innerHTML = parts.join('');
 
-  // 전형명을 누르면 그 전형이 왼쪽에서 선택되어 모집단위를 곧바로 고를 수 있다
+  // 카드를 누르면 그 카드가 속한 대학의 경쟁률을 펼친다 (제거 버튼은 제외)
+  out.querySelectorAll('[data-open]').forEach(el => el.addEventListener('click', e => {
+    if (e.target.closest('[data-rm]')) return;
+    if (String(getSelection())) return;               // 표에서 글자를 긁던 중이면 무시
+    setFocus(el.dataset.open);
+  }));
+  // 전형명을 누르면 그 대학·전형이 왼쪽에서 선택되어 모집단위를 곧바로 고를 수 있다
   out.querySelectorAll('[data-jclick]').forEach(el => el.addEventListener('click', () => {
+    const k = el.dataset.juniv;
+    if (k && k !== S.univ){ S.univ = k; S.unit = null; }
     setJung(el.dataset.jclick);
     $('unitpick').focus();
   }));
@@ -973,8 +984,38 @@ function render(){
     el.addEventListener('click', () => removeFromBasket(el.dataset.rm)));
   const clr = $('basketclear');
   if (clr) clr.addEventListener('click', () => { S.basket = []; render(); refreshPanel(); });
+  const cls = $('focusclose');
+  if (cls) cls.addEventListener('click', () => { S.focus = null; render(); refreshPanel(); });
 
   renderTimeline();
+}
+
+/* 펼친 대학의 경쟁률 — 카드를 누르거나 '전형별 경쟁률 보기' 로 연다 */
+function setFocus(key){
+  S.focus = key;
+  render(); refreshPanel();
+  const el = $('focussec');
+  if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+function focusSection(){
+  const uv = IDX.list.find(u => u.key === S.focus);
+  if (!uv) return '';
+  const head = (extra) => `<h2 class="sec">${esc(uv.name)} <small>${esc(extra)}</small>
+    <button type="button" id="focusclose" class="chipbtn">닫기</button></h2>`;
+
+  if (!uv.ratio){
+    return `<div id="focussec">${head('경쟁률 미수집')}
+      <div class="empty"><b>${esc(uv.name)} — 경쟁률 데이터 없음</b>
+      이 대학은 아직 <code>data/susi_ratio.json</code> 에 수집되지 않았습니다.<br>
+      파일을 업데이트하고 커밋하면 배포 후 자동으로 표시됩니다.
+      ${uv.trackIdx >= 0 ? '<br><br>입결(2024~2026) 자료는 있으므로, 경쟁률만 채우면 4개년 비교가 완성됩니다.' : ''}
+      </div></div>`;
+  }
+  const {cur, rows} = dataOf(uv);
+  if (!cur) return `<div id="focussec">${head('')}
+    <div class="empty"><b>표시할 시즌 데이터가 없습니다</b></div></div>`;
+  return `<div id="focussec">${topSection(uv, cur, rows)}</div>`;
 }
 
 function sortRows(rows){
@@ -1017,7 +1058,8 @@ function topSection(uv, cur, rows){
 
   return `
   <h2 class="sec">${esc(uv.name)} <small>${esc(uv.region || '')} · ${cur.year}학년도 ${esc(cur.category || '수시')}</small>
-    <span class="pill${live ? ' live' : ''}">${live ? '실시간 접수중' : '확정'}</span></h2>
+    <span class="pill${live ? ' live' : ''}">${live ? '실시간 접수중' : '확정'}</span>
+    <button type="button" id="focusclose" class="chipbtn">닫기</button></h2>
 
   <div class="summary">
     <div class="stat hero"><small>${cur.year} 전체 경쟁률</small><b>${ratioText(ov.ratio)}</b>
@@ -1037,7 +1079,7 @@ function topSection(uv, cur, rows){
       <tbody>${by.map(x => {
         const pv = prevOf(x.name);
         const dd = (x.ratio != null && pv != null) ? x.ratio - pv : null;
-        return `<tr><td><button type="button" data-jclick="${esc(x.name)}" style="border:0;background:transparent;padding:0;cursor:pointer;color:var(--fit);font-weight:600;text-align:left">${esc(x.name)}</button>
+        return `<tr><td><button type="button" data-jclick="${esc(x.name)}" data-juniv="${esc(uv.key)}" style="border:0;background:transparent;padding:0;cursor:pointer;color:var(--fit);font-weight:600;text-align:left">${esc(x.name)}</button>
           <span style="color:var(--ink-3);font-size:11px"> ${x.unitCount || 0}개</span></td>
           <td class="num">${fmtInt(x.recruit)}</td><td class="num">${fmtInt(x.applied)}</td>
           <td class="num" style="font-weight:700">${fmt2(x.ratio)}</td>
@@ -1065,7 +1107,8 @@ function dashSection(){
     return `<h2 class="sec">모집단위별 4개년 비교</h2>
       <div class="empty"><b>대시보드가 비어 있습니다</b>
         왼쪽에서 <span class="k">대학 → 전형 → 모집단위</span> 를 고른 뒤 <span class="k">추가</span> 를 누르면 여기에 4개년 비교 카드가 쌓입니다.<br>
-        다른 대학의 모집단위도 함께 담아 나란히 비교할 수 있습니다.</div>`;
+        다른 대학의 모집단위도 함께 담아 나란히 비교할 수 있습니다.<br>
+        대학의 <span class="k">전형별 경쟁률</span> 만 보려면 왼쪽 <span class="k">전형별 경쟁률 보기</span> 를 누르세요.</div>`;
   }
   const shown = S.onlyIp ? all.filter(r => r.hasIp) : all;
   const capped = shown.length > MAX_ROWS;
@@ -1092,7 +1135,7 @@ function cardHtml(r, lvCls){
   const subTxt = r.sub && headUnit(r.sub) !== headUnit(r.unit) ? r.sub : '';
   const estimated = r.years.some(y => y.src === '입결');
   const curYear = r.years[0] ? r.years[0].year : CUR_YEAR;
-  return `<div class="card ${lvCls}">
+  return `<div class="card ${lvCls}"${r.univKey ? ` data-open="${esc(r.univKey)}"` : ''}>
     <div class="top">
       <div class="title">
         ${r.univName ? `<div class="u">${esc(r.univName)}</div>` : ''}
@@ -1125,7 +1168,10 @@ function cardHtml(r, lvCls){
       ${r.ipApprox ? '<span class="tag warn">입결 유사 매칭</span>' : ''}
       ${r.altJungs.length ? `<span class="tag warn">과거 전형명 다름: ${esc(r.altJungs.join(' / '))}</span>` : ''}
       ${estimated ? '<span class="tag" style="border-style:dashed">* 지원인원 = 모집×경쟁률 추정</span>' : ''}
-      ${r.bk ? `<button type="button" class="rm" data-rm="${esc(r.bk)}">제거</button>` : ''}
+      <span class="acts">
+        ${r.univKey ? '<button type="button" class="open">전형별 경쟁률 보기</button>' : ''}
+        ${r.bk ? `<button type="button" class="rm" data-rm="${esc(r.bk)}">제거</button>` : ''}
+      </span>
     </div>
   </div>`;
 }
