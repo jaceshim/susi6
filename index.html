@@ -402,6 +402,22 @@ function jungMarks(s){
   const t = String(s || '');
   return RESTRICT_MARKS.filter(([, re]) => re.test(t)).map(([k]) => k).join('|');
 }
+
+/* 전형명 앞에 학교 이름을 붙이는 대학이 있다 — 경쟁률 '가천바람개비', 입결 '종합(바람개비)'.
+   한쪽에만 붙어 있으면 매칭이 막히므로 떼어 낸 형태도 후보에 넣는다. */
+function univStem(name){
+  const v = normUniv(name).replace(/대$/, '');
+  return v.length >= 2 ? v : '';
+}
+function jungKeys(p, stem){
+  const out = [];
+  for (const v of [p.core, p.full]){
+    if (!v) continue;
+    out.push(v);
+    if (stem && v.startsWith(stem) && v.length - stem.length >= 2) out.push(v.slice(stem.length));
+  }
+  return out;
+}
 /* 모집단위: "인문학부 | 국어국문학과 | 사학과" → 앞부분만 */
 function headUnit(s){
   return String(s || '').split('|')[0].trim().replace(/\s/g, '');
@@ -441,14 +457,14 @@ function commonPrefix(a, b){ let i = 0; while (i < a.length && i < b.length && a
    같은 종류(교과/종합)라는 이유로 넓게 붙이지 않는다. 그렇게 하면
    종합(기회균형)·종합(서강가치)처럼 입결이 공개되지 않은 전형에
    종합(일반)의 입결이 붙어버려, 없는 숫자를 있는 것처럼 보여준다. */
-function matchJungName(names, target){
+function matchJungName(names, target, stem){
   const t = jungParts(target), tm = jungMarks(target);
-  const tset = [t.core, t.full].filter(Boolean);
+  const tset = jungKeys(t, stem);
   const cand = names.map(n => ({n, p: jungParts(n), m: jungMarks(n)}));
   const kindOk = p => !t.kind || !p.kind || t.kind === p.kind;
 
   const exact = cand.filter(c => kindOk(c.p) &&
-    [c.p.core, c.p.full].some(v => v && tset.indexOf(v) >= 0));
+    jungKeys(c.p, stem).some(v => tset.indexOf(v) >= 0));
   if (exact.length) return {names: exact.map(c => c.n), approx: false};
 
   if (tset.length){
@@ -457,8 +473,8 @@ function matchJungName(names, target){
       if (!kindOk(c.p) || c.m !== tm) continue;
       // 알맹이가 종류 표시뿐인 후보('교과(학생부교과)' → '교과')는 접두 비교에서 뺀다.
       // 그러지 않으면 같은 종류의 모든 전형이 여기에 달라붙는다.
-      for (const a of [c.p.core, c.p.full]){
-        if (!a || a === c.p.kind) continue;
+      for (const a of jungKeys(c.p, stem)){
+        if (a === c.p.kind) continue;
         for (const b of tset){
           if (!a.startsWith(b) && !b.startsWith(a)) continue;
           const L = commonPrefix(a, b);
@@ -467,6 +483,26 @@ function matchJungName(names, target){
       }
     }
     if (best) return {names: [best], approx: true};
+
+    /* 구분기호 한 글자만 어긋난 이름을 잇는다 — '일반계고교과' ↔ '일반계교과',
+       '의예ㆍ약학' ↔ '의예,약학'. 가장 가까운 후보가 유일할 때만 붙인다.
+       비슷한 후보가 둘이면 어느 쪽인지 알 수 없으니 포기한다. */
+    const long = tset.filter(b => b.length >= 5);
+    if (long.length){
+      let bd = 99, sd = 99;
+      best = null;
+      for (const c of cand){
+        if (!kindOk(c.p) || c.m !== tm) continue;
+        let dc = 99;
+        for (const a of jungKeys(c.p, stem)){
+          if (a === c.p.kind || a.length < 5) continue;
+          for (const b of long) dc = Math.min(dc, editDist(a, b));
+        }
+        if (dc < bd){ sd = bd; bd = dc; best = c.n; }
+        else if (dc < sd) sd = dc;
+      }
+      if (best && bd <= 1 && bd < sd) return {names: [best], approx: true};
+    }
   } else {
     /* 유웨이 계열 대학은 전형명이 '교과전형' 처럼 종류뿐이다.
        입결 자료의 '교과(교과전형)' 같은 민짜 후보에만 붙인다. */
@@ -592,12 +628,13 @@ function seasonsOf(uv){
 /* ── 입결 매칭 ──────────────────────────────────────────── */
 function ipRowFor(uv, jungName, unitObj){
   if (!uv || uv.trackIdx < 0) return null;
+  const stem = univStem(uv.name);
   const m = IDX.byUniv.get(uv.trackIdx);
   if (!m) return null;
 
   // 입결 자료의 전형명(원문) 목록에서 후보를 고른다
   const raw = IDX.rawJungOf.get(uv.trackIdx) || [];
-  const {names, approx: jApprox} = matchJungName(raw, jungName);
+  const {names, approx: jApprox} = matchJungName(raw, jungName, stem);
   if (!names.length) return null;
 
   const cand = [];
@@ -614,10 +651,10 @@ function ipRowFor(uv, jungName, unitObj){
 }
 
 /* ── 과거 경쟁률 매칭 (susi_ratio.json 내부) ────────────── */
-function pastUnitFor(season, jungName, unitObj){
+function pastUnitFor(season, jungName, unitObj, stem){
   if (!season || !Array.isArray(season.details)) return null;
   const raw = season.details.map(d => d.name);
-  const {names, approx: jApprox} = matchJungName(raw, jungName);
+  const {names, approx: jApprox} = matchJungName(raw, jungName, stem);
   if (!names.length) return null;
 
   const pool = [];
@@ -654,7 +691,7 @@ function buildRow(uv, curSeason, past, jung, unitObj){
     const ipY = (ipRow && off != null)
       ? {recruit: ipRow[off], fill: ipRow[off+1], ratio: ipRow[off+2], g50: ipRow[off+3], g70: ipRow[off+4]}
       : null;
-    const hit = pastUnitFor(past.get(y), jung.name, unitObj);
+    const hit = pastUnitFor(past.get(y), jung.name, unitObj, univStem(uv.name));
     let recruit = null, applied = null, ratio = null, src = null, approx = false, altJung = null;
     if (hit){
       recruit = hit.u.recruit; applied = hit.u.applied; ratio = hit.u.ratio; src = '경쟁률';
