@@ -112,6 +112,7 @@ aside{height:100%;min-height:0;min-width:0}
 .panel h2 .hint{font-weight:400;text-transform:none;letter-spacing:0;color:var(--ink-3);margin-left:auto;font-size:12px}
 .cta{flex:0 0 auto;display:flex;gap:8px;padding:14px 18px;border-top:1px solid var(--line);background:var(--paper-2);box-shadow:0 -8px 16px -14px rgba(31,31,73,.5)}
 .cta .primary{flex:1;padding:12px;border:0;border-radius:10px;background:var(--seal);color:#fff;font-weight:600;cursor:pointer;font-size:15px;box-shadow:0 6px 16px -8px var(--seal)}
+.cta .primary:disabled{background:var(--line);color:var(--ink-3);box-shadow:none;cursor:not-allowed}
 .cta .ghost{padding:12px 14px;border:1px solid var(--line);border-radius:10px;background:transparent;cursor:pointer;color:var(--ink-2)}
 @media (max-width:900px){
   aside{height:auto}
@@ -121,34 +122,36 @@ aside{height:100%;min-height:0;min-width:0}
   .panel{max-height:none;overflow:visible}
   .formscroll{overflow:visible}
 }
-.kw{display:flex;gap:6px}
-.kw input{flex:1;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper)}
-.kw button{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--paper);cursor:pointer;white-space:nowrap}
 .f label{display:block;font-size:12px;color:var(--ink-2);margin-bottom:4px}
 .f select,.f input{width:100%;max-width:100%;min-width:0;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);text-overflow:ellipsis}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{padding:5px 10px;border:1px solid var(--line);border-radius:999px;background:var(--paper);cursor:pointer;font-size:13px;color:var(--ink-2);text-align:left}
-.chip[aria-pressed="true"]{background:var(--seal-soft);border-color:var(--seal);color:var(--seal);font-weight:600}
-.chip .c{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-left:5px}
-.chip[aria-pressed="true"] .c{color:var(--seal)}
 .row{display:flex;gap:10px;align-items:center;justify-content:space-between;font-size:13px;color:var(--ink-2)}
 .toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ink-2)}
 .toggle input{accent-color:var(--seal)}
 .help{font-size:12px;color:var(--ink-3);margin:8px 0 0;line-height:1.5}
-.unitbox{max-height:230px;overflow-y:auto;margin-top:8px;border:1px solid var(--line-2);border-radius:8px;padding:8px;background:var(--paper)}
-.unitbox::-webkit-scrollbar{width:8px}
-.unitbox::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
-.ulist{display:flex;flex-direction:column;gap:2px}
-.ulist label{display:flex;gap:8px;align-items:baseline;font-size:13px;padding:3px 4px;border-radius:6px;cursor:pointer}
-.ulist label:hover{background:var(--paper-3)}
-.ulist input{accent-color:var(--seal);margin-top:3px;flex:none}
-.ulist .un{flex:1;min-width:0;overflow-wrap:anywhere}
-.ulist .ur{font-family:var(--mono);font-size:12px;color:var(--ink-3);flex:none}
+
+/* 콤보박스 — 대학·전형·모집단위가 같은 조작감을 갖는다 (검색 → 제안 → 한 개 선택) */
+.combo{position:relative}
+.combo input{width:100%;max-width:100%;min-width:0;padding:8px 30px 8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);text-overflow:ellipsis}
+.combo input:disabled{background:var(--paper-3);color:var(--ink-3);cursor:not-allowed}
+.combo.sel input{border-color:var(--seal);background:var(--seal-soft);font-weight:600;color:var(--seal)}
+.cclear{position:absolute;top:50%;right:6px;transform:translateY(-50%);width:20px;height:20px;padding:0;border:0;border-radius:50%;background:var(--paper-3);color:var(--ink-2);cursor:pointer;font-size:13px;line-height:19px;text-align:center}
+.cclear:hover{background:var(--line);color:var(--ink)}
+.pop{position:fixed;z-index:60;margin:0;padding:4px;list-style:none;max-height:270px;overflow-y:auto;overscroll-behavior:contain;background:var(--paper-2);border:1px solid var(--line);border-radius:10px;box-shadow:var(--shadow)}
+.pop::-webkit-scrollbar{width:8px}
+.pop::-webkit-scrollbar-thumb{background:var(--line);border-radius:5px}
+.pop li{display:flex;align-items:baseline;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;font-size:13px}
+.pop li .l{flex:1;min-width:0;overflow-wrap:anywhere}
+.pop li .m{flex:none;font-family:var(--mono);font-size:11.5px;color:var(--ink-3)}
+.pop li.on{background:var(--seal-soft);color:var(--seal);font-weight:600}
+.pop li.on .m{color:var(--seal)}
+.pop li.none{color:var(--ink-3);cursor:default;font-size:12.5px}
 
 /* results */
 .results{display:flex;flex-direction:column;gap:20px;min-width:0}
 h2.sec{margin:2px 0 0;font-size:18px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
 h2.sec small{color:var(--ink-3);font-size:13px;font-weight:400}
+h2.sec .chipbtn{margin-left:auto;padding:4px 11px;border:1px solid var(--line);border-radius:999px;background:var(--paper-2);color:var(--ink-2);font-size:12px;cursor:pointer}
+h2.sec .chipbtn:hover{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
 .summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 @media (max-width:900px){.summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:460px){.summary{grid-template-columns:1fr}}
@@ -173,7 +176,9 @@ td.num,th.num{text-align:right}
 tr.tot td{font-weight:700;background:var(--paper-3);border-top:2px solid var(--line)}
 
 /* 모집단위 카드 */
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(clamp(300px,25vw,380px),1fr));gap:14px}
+.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+@media (max-width:1400px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:700px){.cards{grid-template-columns:minmax(0,1fr)}}
 .card{position:relative;background:var(--paper-2);border:1px solid var(--line);border-radius:14px;padding:13px 15px 13px 19px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:9px;min-width:0}
 .card::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:4px;border-radius:0 3px 3px 0;background:var(--c,var(--brand-3))}
 .card.lv1{--c:var(--safe)} .card.lv2{--c:var(--fit)} .card.lv3{--c:var(--reach)} .card.lv4{--c:var(--up)}
@@ -196,7 +201,10 @@ tr.tot td{font-weight:700;background:var(--paper-3);border-top:2px solid var(--l
 .card tr.now td:first-child{border-radius:6px 0 0 6px}
 .card tr.now td:last-child{border-radius:0 6px 6px 0}
 .card tr.nodata td{color:var(--ink-3)}
-.card .cardfoot{font-size:11.5px;color:var(--ink-3);border-top:1px dashed var(--line-2);padding-top:7px;display:flex;gap:8px;flex-wrap:wrap}
+.card .cardfoot{font-size:11.5px;color:var(--ink-3);border-top:1px dashed var(--line-2);padding-top:7px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.card .rm{margin-left:auto;flex:none;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink-3);font-size:11px;cursor:pointer}
+.card .rm:hover{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}
+.card .title .u{font-size:12px;font-weight:600;color:var(--seal)}
 .tag{display:inline-block;padding:1px 7px;border-radius:5px;font-size:11px;border:1px solid var(--line);color:var(--ink-2);background:var(--paper)}
 .tag.type{border-color:transparent;background:var(--paper-3);color:var(--ink)}
 .tag.warn{border-color:var(--reach);color:var(--reach)}
@@ -205,6 +213,7 @@ tr.tot td{font-weight:700;background:var(--paper-3);border-top:2px solid var(--l
 
 .empty{padding:32px 24px;border:1px dashed var(--line);border-radius:14px;color:var(--ink-3);text-align:center;background:var(--paper-2)}
 .empty b{display:block;color:var(--ink-2);font-size:15px;margin-bottom:6px}
+.empty .k{display:inline;font-weight:600;color:var(--ink-2)}
 .notice{padding:11px 14px;border-left:4px solid var(--reach);background:var(--reach-soft);border-radius:0 10px 10px 0;font-size:13px;color:var(--ink-2)}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--ink-2);align-items:center}
 .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:var(--c)}
@@ -240,27 +249,38 @@ footer code{font-family:var(--mono);font-size:11px;background:var(--paper-3);pad
     <div class="formscroll">
       <section>
         <h2>대학 <span class="hint" id="univhint"></span></h2>
-        <div class="f"><select id="univsel" aria-label="대학 선택"></select></div>
+        <div class="combo" id="univcombo">
+          <input id="univpick" type="text" role="combobox" aria-expanded="false" aria-autocomplete="list"
+                 aria-controls="univpop" aria-label="대학 검색 후 선택"
+                 placeholder="대학 검색 (예: 서강대)" autocomplete="off" spellcheck="false">
+          <button class="cclear" id="univclear" type="button" aria-label="대학 선택 지우기" hidden>×</button>
+          <ul class="pop" id="univpop" role="listbox" aria-label="대학 목록" hidden></ul>
+        </div>
         <p class="help" id="univnote"></p>
       </section>
 
       <section>
         <h2>전형 <span class="hint" id="jhint"></span></h2>
-        <div class="chips" id="jungs"></div>
-        <p class="help">2027학년도에 실시하는 전형입니다. 괄호 안 숫자는 모집단위 수입니다.</p>
+        <div class="combo" id="jungcombo">
+          <input id="jungpick" type="text" role="combobox" aria-expanded="false" aria-autocomplete="list"
+                 aria-controls="jungpop" aria-label="전형 검색 후 선택"
+                 placeholder="전형 검색 (예: 학생부교과)" autocomplete="off" spellcheck="false" disabled>
+          <button class="cclear" id="jungclear" type="button" aria-label="전형 선택 지우기" hidden>×</button>
+          <ul class="pop" id="jungpop" role="listbox" aria-label="전형 목록" hidden></ul>
+        </div>
+        <p class="help">2027학년도에 실시하는 전형입니다. 오른쪽 숫자는 모집단위 수입니다.</p>
       </section>
 
       <section>
         <h2>모집단위 <span class="hint" id="uhint"></span></h2>
-        <div class="kw">
-          <input id="unitq" placeholder="학과 키워드 (예: 컴퓨터, 경영)" aria-label="모집단위 검색" autocomplete="off">
-          <button id="unitclear" type="button">지우기</button>
+        <div class="combo" id="unitcombo">
+          <input id="unitpick" type="text" role="combobox" aria-expanded="false" aria-autocomplete="list"
+                 aria-controls="unitpop" aria-label="모집단위 검색 후 선택"
+                 placeholder="학과 검색 (예: 컴퓨터, 경영)" autocomplete="off" spellcheck="false" disabled>
+          <button class="cclear" id="unitclear" type="button" aria-label="모집단위 선택 지우기" hidden>×</button>
+          <ul class="pop" id="unitpop" role="listbox" aria-label="모집단위 목록" hidden></ul>
         </div>
-        <div class="row" style="margin-top:8px">
-          <label class="toggle"><input type="checkbox" id="unitall" checked> 전체 선택</label>
-          <span class="num" id="unitcount" style="color:var(--ink-3);font-size:12px"></span>
-        </div>
-        <div class="unitbox"><div class="ulist" id="units"></div></div>
+        <p class="help" id="unitnote">대학과 전형을 먼저 고르세요.</p>
       </section>
 
       <section>
@@ -276,11 +296,11 @@ footer code{font-family:var(--mono);font-size:11px;background:var(--paper-3);pad
             <option value="jung">전형 순</option>
           </select></div>
         <label class="toggle" style="margin-top:10px"><input type="checkbox" id="onlyipgyeol"> 입결 데이터가 있는 모집단위만</label>
-        <p class="help">대시보드는 최대 100건까지 표시합니다. 100건을 넘으면 정렬 기준 상위 100건만 보여줍니다.</p>
+        <p class="help">정렬과 필터는 대시보드에 담은 모집단위에 적용됩니다.</p>
       </section>
     </div>
     <div class="cta">
-      <button class="primary" id="run" type="button">대시보드 보기</button>
+      <button class="primary" id="add" type="button" disabled>추가</button>
       <button class="ghost" id="reset" type="button" title="선택 초기화">초기화</button>
     </div>
   </div>
@@ -319,7 +339,10 @@ const ratioText = n => n == null ? '—' : fmt2(n) + ' : 1';
 
 let RT = null, IP = null;
 let IDX = null;                 // 정규화 인덱스
-let S = {univ:null, jungs:null, units:null, unitq:'', sort:'ratio-desc', onlyIp:false};
+/* 선택은 대학·전형·모집단위 각각 한 개. 담은 모집단위는 basket 에 쌓인다.
+   basket 항목은 {k, univKey, rowKey} — 행 자체가 아니라 키만 들고 있다가
+   렌더할 때 dataOf() 로 되찾는다(대학 데이터가 갱신돼도 어긋나지 않게). */
+let S = {univ:null, jung:null, unit:null, sort:'ratio-desc', onlyIp:false, basket:[]};
 
 /* ── 정규화 ─────────────────────────────────────────────── */
 function normUniv(s){
@@ -629,19 +652,227 @@ function allRows(uv){
   return {cur, past, rows};
 }
 
+/* ── 콤보박스 ───────────────────────────────────────────── */
+/* 대학·전형·모집단위가 같은 조작감을 갖도록 구현 하나를 공유한다.
+   items() 는 {id, label, meta, search} 배열을 돌려주고, 고르면 onPick(item | null). */
+function makeCombo(cfg){
+  const {input, pop, clear, wrap} = cfg;
+  let list = [], active = 0, open = false;
+
+  function draw(){
+    const q = input.value.trim().toLowerCase();
+    const all = cfg.items() || [];
+    // 이미 고른 값이 그대로 적혀 있으면 좁히지 않는다 — 다시 열었을 때 전체가 보이게
+    const narrow = q && q !== String(cfg.pickedLabel() || '').toLowerCase();
+    list = narrow ? all.filter(it => it.search.includes(q)) : all;
+    if (active < 0 || active >= list.length) active = 0;
+    pop.innerHTML = list.length
+      ? list.slice(0, 300).map((it, i) =>
+          `<li role="option" data-i="${i}" class="${i === active ? 'on' : ''}" aria-selected="${i === active}">` +
+          `<span class="l">${esc(it.label)}</span>${it.meta ? `<span class="m">${esc(it.meta)}</span>` : ''}</li>`).join('')
+        + (list.length > 300 ? `<li class="none">… 외 ${list.length - 300}개 — 검색어를 좁혀보세요</li>` : '')
+      : `<li class="none">${esc(q ? '검색 결과가 없습니다' : (cfg.empty || '항목이 없습니다'))}</li>`;
+  }
+  function scrollActive(){ const el = pop.querySelector('li.on'); if (el) el.scrollIntoView({block:'nearest'}); }
+  /* 목록은 화면 기준으로 띄운다 — 왼쪽 패널이 스크롤 컨테이너라 그 안에 두면 잘린다 */
+  function place(){
+    const r = input.getBoundingClientRect();
+    const below = window.innerHeight - r.bottom - 10, above = r.top - 10;
+    const up = below < 160 && above > below;
+    pop.style.left = r.left + 'px';
+    pop.style.width = r.width + 'px';
+    pop.style.maxHeight = Math.max(120, Math.min(300, up ? above : below)) + 'px';
+    if (up){ pop.style.top = 'auto'; pop.style.bottom = (window.innerHeight - r.top + 4) + 'px'; }
+    else { pop.style.bottom = 'auto'; pop.style.top = (r.bottom + 4) + 'px'; }
+  }
+  function show(){ if (input.disabled) return; open = true; pop.hidden = false; input.setAttribute('aria-expanded', 'true'); draw(); place(); scrollActive(); }
+  function hide(){ open = false; pop.hidden = true; input.setAttribute('aria-expanded', 'false'); }
+  function pick(i){
+    const it = list[i];
+    if (!it) return;
+    input.value = it.label;
+    hide();
+    cfg.onPick(it);
+    const nx = cfg.next && cfg.next();       // 대학 → 전형 → 모집단위 → 추가 로 이어지게
+    if (nx && !nx.disabled) nx.focus();
+  }
+
+  input.addEventListener('focus', () => { input.select(); show(); });
+  input.addEventListener('input', () => { active = 0; show(); });
+  const reposition = () => { if (open) place(); };
+  window.addEventListener('scroll', reposition, true);   // capture — 안쪽 스크롤 컨테이너까지 따라간다
+  window.addEventListener('resize', reposition);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+      e.preventDefault();
+      if (!open){ show(); return; }
+      active += e.key === 'ArrowDown' ? 1 : -1;
+      if (active < 0) active = list.length - 1;
+      if (active >= list.length) active = 0;
+      draw(); place(); scrollActive();
+    } else if (e.key === 'Enter'){
+      if (open && list.length){ e.preventDefault(); pick(active); }
+    } else if (e.key === 'Escape'){
+      if (open){ e.preventDefault(); hide(); }
+    }
+  });
+  input.addEventListener('blur', () => setTimeout(hide, 120));
+  pop.addEventListener('mousedown', e => {
+    const li = e.target.closest('li[data-i]');
+    if (!li) return;
+    e.preventDefault();                      // blur 로 목록이 닫히기 전에 고른다
+    pick(+li.dataset.i);
+  });
+  clear.addEventListener('click', () => { cfg.onPick(null); input.focus(); });
+
+  return {
+    sync(){                                   // 선택 상태를 입력칸에 반영
+      const lb = cfg.pickedLabel();
+      if (document.activeElement !== input) input.value = lb || '';
+      wrap.classList.toggle('sel', !!lb);
+      clear.hidden = !lb;
+      if (open) draw();
+    }
+  };
+}
+
+/* ── 선택지 ─────────────────────────────────────────────── */
+function univItems(){
+  return IDX.list.map(u => ({
+    id: u.key, label: u.name,
+    meta: (u.region || '') + (u.ratio ? '' : ' · 미수집'),
+    search: (u.name + ' ' + normUniv(u.name) + ' ' + (u.region || '')).toLowerCase()
+  }));
+}
+function jungItems(){
+  const uv = curUniv();
+  if (!uv || !uv.ratio) return [];
+  const {cur, rows} = dataOf(uv);
+  if (!cur) return [];
+  const names = [];
+  for (const d of cur.details) if (!names.includes(d.name)) names.push(d.name);
+  const cnt = {};
+  for (const r of rows) cnt[r.jung] = (cnt[r.jung] || 0) + 1;
+  return names.map(n => ({id:n, label:n, meta:`${cnt[n] || 0}개`, search:String(n).toLowerCase()}));
+}
+function unitItems(){
+  const uv = curUniv();
+  if (!uv || !uv.ratio || !S.jung) return [];
+  return dataOf(uv).rows.filter(r => r.jung === S.jung).map(r => ({
+    id: unitKey(r), label: r.unit, meta: fmt2(r.ratio),
+    search: (r.unit + ' ' + (r.sub || '')).toLowerCase()
+  }));
+}
+
+/* ── 담은 목록 ──────────────────────────────────────────── */
+function unitKey(r){ return r.jung + '¦' + r.unit + '¦' + r.sub; }
+
+function addRow(uv, r){
+  const k = uv.key + '¦' + unitKey(r);
+  if (S.basket.some(b => b.k === k)) return false;
+  S.basket.push({k, univKey: uv.key, rowKey: unitKey(r)});
+  return true;
+}
+/* 담은 항목을 실제 행으로 되살린다. 데이터가 바뀌어 사라진 항목은 조용히 걸러낸다. */
+function basketRows(){
+  const out = [];
+  for (const b of S.basket){
+    const uv = IDX.list.find(u => u.key === b.univKey);
+    if (!uv || !uv.ratio) continue;
+    const r = dataOf(uv).rows.find(x => unitKey(x) === b.rowKey);
+    if (r) out.push(Object.assign({}, r, {bk: b.k, univName: uv.name}));
+  }
+  return out;
+}
+function addPicked(){
+  const uv = curUniv();
+  if (!uv || !uv.ratio || !S.jung || !S.unit) return;
+  const r = dataOf(uv).rows.find(x => unitKey(x) === S.unit);
+  if (!r) return;
+  const added = addRow(uv, r);
+  S.unit = null;                              // 다음 모집단위를 곧바로 고를 수 있게 비운다
+  refreshPanel(); render();
+  note(added ? `${uv.name} · ${r.unit} 추가` : '이미 대시보드에 있는 모집단위입니다');
+  $('unitpick').focus();
+}
+function removeFromBasket(k){
+  S.basket = S.basket.filter(b => b.k !== k);
+  render(); refreshPanel();
+}
+
+let noteTimer = null;
+function note(msg){
+  const el = $('unitnote');
+  el.textContent = msg;
+  el.style.color = 'var(--seal)';
+  clearTimeout(noteTimer);
+  noteTimer = setTimeout(refreshPanel, 2400);
+}
+
 /* ── UI ─────────────────────────────────────────────────── */
+const COMBO = {};
+
+function setUniv(key){
+  S.univ = key; S.jung = null; S.unit = null;
+  refreshPanel(); render();
+}
+function setJung(name){
+  S.jung = name; S.unit = null;
+  refreshPanel();
+}
+
 function initUI(){
-  const sel = $('univsel'), dl = $('univlist');
-  sel.innerHTML = IDX.list.map(u =>
-    `<option value="${esc(u.key)}"${u.ratio ? '' : ' data-nodata="1"'}>${esc(u.name)}${u.region ? ' · ' + esc(u.region) : ''}${u.ratio ? '' : '  (미수집)'}</option>`
-  ).join('');
-  dl.innerHTML = IDX.list.map(u => `<option value="${esc(u.name)}">${esc(u.region || '')}</option>`).join('');
+  COMBO.univ = makeCombo({
+    wrap:$('univcombo'), input:$('univpick'), pop:$('univpop'), clear:$('univclear'),
+    items: univItems, empty: '대학이 없습니다',
+    pickedLabel: () => { const u = curUniv(); return u ? u.name : ''; },
+    next: () => $('jungpick'),
+    onPick: it => setUniv(it ? it.id : null)
+  });
+  COMBO.jung = makeCombo({
+    wrap:$('jungcombo'), input:$('jungpick'), pop:$('jungpop'), clear:$('jungclear'),
+    items: jungItems, empty: '이 대학의 전형 정보가 없습니다',
+    pickedLabel: () => S.jung || '',
+    next: () => $('unitpick'),
+    onPick: it => setJung(it ? it.id : null)
+  });
+  COMBO.unit = makeCombo({
+    wrap:$('unitcombo'), input:$('unitpick'), pop:$('unitpop'), clear:$('unitclear'),
+    items: unitItems, empty: '해당 전형의 모집단위가 없습니다',
+    pickedLabel: () => {
+      if (!S.unit) return '';
+      const it = unitItems().find(x => x.id === S.unit);
+      return it ? it.label : '';
+    },
+    next: () => $('add'),
+    onPick: it => { S.unit = it ? it.id : null; refreshPanel(); }
+  });
 
   const withData = IDX.list.filter(u => u.ratio).length;
   $('univhint').textContent = `전체 ${IDX.list.length}개 · 경쟁률 ${withData}개`;
   $('qcount').textContent = `경쟁률 ${withData}/${IDX.list.length}`;
 
-  // 첫 화면은 모집단위가 가장 많은 대학 — 대시보드가 무엇을 보여주는지 한눈에 드러난다
+  // 헤더 검색은 왼쪽 대학 선택으로 곧장 이어진다
+  $('univlist').innerHTML = IDX.list.map(u => `<option value="${esc(u.name)}">${esc(u.region || '')}</option>`).join('');
+  $('univq').addEventListener('change', () => {
+    const q = $('univq').value.trim();
+    if (!q) return;
+    const hit = IDX.list.find(u => u.name === q) ||
+                IDX.list.find(u => normUniv(u.name).includes(normUniv(q)));
+    if (hit){ setUniv(hit.key); $('univq').value = ''; $('jungpick').focus(); }
+  });
+
+  $('sortsel').addEventListener('change', () => { S.sort = $('sortsel').value; render(); });
+  $('onlyipgyeol').addEventListener('change', () => { S.onlyIp = $('onlyipgyeol').checked; render(); });
+  $('add').addEventListener('click', addPicked);
+  $('reset').addEventListener('click', () => {
+    setJung(null);
+    S.sort = 'ratio-desc'; $('sortsel').value = 'ratio-desc';
+    S.onlyIp = false; $('onlyipgyeol').checked = false;
+    render();
+  });
+
+  // 첫 화면 — 모집단위가 가장 많은 대학의 경쟁률 상위 3개를 담아 대시보드가 무엇인지 드러낸다
   const withRatio = IDX.list.filter(u => u.ratio);
   const sizeOf = u => {
     const s = (u.ratio.seasons || []).find(x => x.year === CUR_YEAR) || (u.ratio.seasons || [])[0];
@@ -651,39 +882,10 @@ function initUI(){
     ? withRatio.reduce((a, b) => sizeOf(b) > sizeOf(a) ? b : a)
     : IDX.list[0];
   S.univ = first.key;
-  sel.value = S.univ;
-
-  sel.addEventListener('change', () => { S.univ = sel.value; S.jungs = null; S.units = null; refreshPanel(); render(); });
-  $('univq').addEventListener('change', () => {
-    const q = $('univq').value.trim();
-    if (!q) return;
-    const hit = IDX.list.find(u => u.name === q) ||
-                IDX.list.find(u => normUniv(u.name).includes(normUniv(q)));
-    if (hit){ sel.value = S.univ = hit.key; S.jungs = null; S.units = null; refreshPanel(); render(); }
-  });
-  $('unitq').addEventListener('input', () => { S.unitq = $('unitq').value.trim(); refreshUnits(); });
-  $('unitclear').addEventListener('click', () => { $('unitq').value = ''; S.unitq = ''; refreshUnits(); });
-  $('unitall').addEventListener('change', () => {
-    const on = $('unitall').checked;
-    const vis = visibleUnitKeys();
-    S.units = S.units || new Set();
-    vis.forEach(k => on ? S.units.add(k) : S.units.delete(k));
-    refreshUnits(); render();
-  });
-  $('sortsel').addEventListener('change', () => { S.sort = $('sortsel').value; render(); });
-  $('onlyipgyeol').addEventListener('change', () => { S.onlyIp = $('onlyipgyeol').checked; render(); });
-  $('run').addEventListener('click', () => {
-    render();
-    const rc = $('rightcol');
-    if (window.matchMedia('(min-width:901px)').matches) rc.scrollTo({top:0, behavior:'smooth'});
-    else rc.scrollIntoView({behavior:'smooth', block:'start'});
-  });
-  $('reset').addEventListener('click', () => {
-    S.jungs = null; S.units = null; S.unitq = ''; $('unitq').value = '';
-    S.sort = 'ratio-desc'; $('sortsel').value = 'ratio-desc';
-    S.onlyIp = false; $('onlyipgyeol').checked = false;
-    refreshPanel(); render();
-  });
+  if (first.ratio){
+    const seed = dataOf(first).rows.filter(r => r.ratio != null).sort((a, b) => b.ratio - a.ratio);
+    for (const r of seed.slice(0, 3)) addRow(first, r);
+  }
 
   const g = RT.generatedAt ? new Date(RT.generatedAt) : null;
   $('subline').innerHTML = `2027학년도 수시 실시간 경쟁률 · 최근 3개년 경쟁률·입결 비교` +
@@ -696,11 +898,11 @@ function initUI(){
 
 function curUniv(){ return IDX.list.find(u => u.key === S.univ) || null; }
 
-let CACHE = {key:null, data:null};
+const CACHE = new Map();
 function dataOf(uv){
-  if (CACHE.key === uv.key) return CACHE.data;
-  CACHE = {key:uv.key, data:allRows(uv)};
-  return CACHE.data;
+  let d = CACHE.get(uv.key);
+  if (!d){ d = allRows(uv); CACHE.set(uv.key, d); }
+  return d;
 }
 
 function refreshPanel(){
@@ -708,81 +910,23 @@ function refreshPanel(){
   $('univnote').innerHTML = uv && !uv.ratio
     ? '이 대학은 <code>data/susi_ratio.json</code> 에 아직 경쟁률이 없습니다. 수집 후 파일을 업데이트하면 자동으로 나타납니다.'
     : (uv && uv.ratio && uv.ratio.homepage ? `입학처 <a href="${esc(uv.ratio.homepage)}" target="_blank" rel="noopener">바로가기</a>` : '');
-  refreshJungs();
-  refreshUnits();
+
+  const jungs = jungItems(), units = unitItems();
+  $('jungpick').disabled = !jungs.length;
+  $('unitpick').disabled = !S.jung || !units.length;
+  $('jhint').textContent = jungs.length ? `${jungs.length}개` : '';
+  $('uhint').textContent = S.jung ? `${units.length}개` : '';
+
+  const el = $('unitnote');
+  el.style.color = '';
+  el.textContent = !uv || !uv.ratio ? '경쟁률 데이터가 없습니다.'
+    : !S.jung ? '전형을 먼저 고르세요.'
+    : S.unit ? '아래 [추가] 를 누르면 대시보드에 담깁니다.'
+    : '비교할 모집단위를 고르세요.';
+
+  COMBO.univ.sync(); COMBO.jung.sync(); COMBO.unit.sync();
+  $('add').disabled = !(uv && uv.ratio && S.jung && S.unit);
   renderTimeline();
-}
-
-function refreshJungs(){
-  const uv = curUniv(), box = $('jungs');
-  if (!uv || !uv.ratio){ box.innerHTML = '<span class="help">경쟁률 데이터가 없습니다.</span>'; $('jhint').textContent = ''; return; }
-  const {cur, rows} = dataOf(uv);
-  if (!cur){ box.innerHTML = '<span class="help">경쟁률 데이터가 없습니다.</span>'; return; }
-  const names = [];
-  for (const d of cur.details) if (!names.includes(d.name)) names.push(d.name);
-  if (S.jungs == null) S.jungs = new Set(names);
-  const cnt = {};
-  for (const r of rows) cnt[r.jung] = (cnt[r.jung] || 0) + 1;
-  const all = S.jungs.size === names.length;
-  box.innerHTML =
-    `<button type="button" class="chip" data-all="1" aria-pressed="${all}">전체<span class="c">${rows.length}</span></button>` +
-    names.map(n =>
-      `<button type="button" class="chip" data-j="${esc(n)}" aria-pressed="${S.jungs.has(n)}">${esc(n)}<span class="c">${cnt[n] || 0}</span></button>`
-    ).join('');
-  $('jhint').textContent = all ? '전체 선택' : `${S.jungs.size}/${names.length} 선택`;
-  box.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
-    if (b.dataset.all){
-      S.jungs = new Set(names);
-    } else {
-      const j = b.dataset.j;
-      // 전체가 켜진 상태에서 하나를 누르면 그 전형만 남긴다 — 6개를 일일이 끄지 않아도 되게
-      if (S.jungs.size === names.length) S.jungs = new Set([j]);
-      else if (S.jungs.has(j)) S.jungs.delete(j);
-      else S.jungs.add(j);
-      if (!S.jungs.size) S.jungs = new Set(names);
-    }
-    S.units = null;
-    refreshJungs(); refreshUnits(); render();
-  }));
-}
-
-function unitKey(r){ return r.jung + '¦' + r.unit + '¦' + r.sub; }
-
-function visibleRows(){
-  const uv = curUniv();
-  if (!uv || !uv.ratio) return [];
-  const {rows} = dataOf(uv);
-  const q = S.unitq.toLowerCase();
-  return rows.filter(r => {
-    if (S.jungs && !S.jungs.has(r.jung)) return false;
-    if (q && !((r.unit + ' ' + r.sub).toLowerCase().includes(q))) return false;
-    return true;
-  });
-}
-function visibleUnitKeys(){ return visibleRows().map(unitKey); }
-
-function refreshUnits(){
-  const box = $('units');
-  const rows = visibleRows();
-  if (S.units == null) S.units = new Set(rows.map(unitKey));
-  box.innerHTML = rows.length ? rows.map(r => {
-    const k = unitKey(r);
-    return `<label><input type="checkbox" data-k="${esc(k)}"${S.units.has(k) ? ' checked' : ''}>` +
-      `<span class="un">${esc(r.unit)}<span style="color:var(--ink-3);font-size:11px"> · ${esc(r.jung)}</span></span>` +
-      `<span class="ur">${fmt2(r.ratio)}</span></label>`;
-  }).join('') : '<span class="help">해당 조건의 모집단위가 없습니다.</span>';
-  box.querySelectorAll('input').forEach(c => c.addEventListener('change', () => {
-    if (c.checked) S.units.add(c.dataset.k); else S.units.delete(c.dataset.k);
-    updUnitCount(); render();
-  }));
-  updUnitCount();
-  $('uhint').textContent = `${rows.length}개`;
-}
-function updUnitCount(){
-  const rows = visibleRows();
-  const on = rows.filter(r => S.units.has(unitKey(r))).length;
-  $('unitcount').textContent = `${on} / ${rows.length}`;
-  $('unitall').checked = rows.length > 0 && on === rows.length;
 }
 
 function renderTimeline(){
@@ -805,34 +949,31 @@ function renderTimeline(){
 /* ── 렌더 ───────────────────────────────────────────────── */
 function render(){
   const uv = curUniv(), out = $('results');
-  if (!uv){ out.innerHTML = '<div class="empty"><b>대학을 선택해주세요</b></div>'; return; }
-  if (!uv.ratio){
-    out.innerHTML = `<div class="empty"><b>${esc(uv.name)} — 경쟁률 데이터 없음</b>
+  const parts = [dashSection()];                      // 담은 모집단위 비교가 언제나 맨 위
+
+  if (uv && !uv.ratio){
+    parts.push(`<div class="empty"><b>${esc(uv.name)} — 경쟁률 데이터 없음</b>
       이 대학은 아직 <code>data/susi_ratio.json</code> 에 수집되지 않았습니다.<br>
       파일을 업데이트하고 커밋하면 배포 후 자동으로 표시됩니다.
       ${uv.trackIdx >= 0 ? '<br><br>입결(2024~2026) 자료는 있으므로, 경쟁률만 채우면 4개년 비교가 완성됩니다.' : ''}
-    </div>`;
-    renderTimeline();
-    return;
+    </div>`);
+  } else if (uv){
+    const {cur, rows} = dataOf(uv);
+    parts.push(cur ? topSection(uv, cur, rows)
+                   : '<div class="empty"><b>표시할 시즌 데이터가 없습니다</b></div>');
   }
-  const {cur, rows} = dataOf(uv);
-  if (!cur){ out.innerHTML = '<div class="empty"><b>표시할 시즌 데이터가 없습니다</b></div>'; return; }
+  out.innerHTML = parts.join('');
 
-  let picked = visibleRows().filter(r => S.units.has(unitKey(r)));
-  if (S.onlyIp) picked = picked.filter(r => r.hasIp);
-  const total = picked.length;
-  picked = sortRows(picked).slice(0, MAX_ROWS);
-
-  out.innerHTML = [
-    topSection(uv, cur, rows),
-    bottomSection(uv, cur, picked, total)
-  ].join('');
-
+  // 전형명을 누르면 그 전형이 왼쪽에서 선택되어 모집단위를 곧바로 고를 수 있다
   out.querySelectorAll('[data-jclick]').forEach(el => el.addEventListener('click', () => {
-    const j = el.dataset.jclick;
-    S.jungs = new Set([j]); S.units = null;
-    refreshJungs(); refreshUnits(); render();
+    setJung(el.dataset.jclick);
+    $('unitpick').focus();
   }));
+  out.querySelectorAll('[data-rm]').forEach(el =>
+    el.addEventListener('click', () => removeFromBasket(el.dataset.rm)));
+  const clr = $('basketclear');
+  if (clr) clr.addEventListener('click', () => { S.basket = []; render(); refreshPanel(); });
+
   renderTimeline();
 }
 
@@ -917,39 +1058,50 @@ function deltaHtml(d, small){
   return `<span class="delta ${cls}"${small ? ' style="font-size:11px"' : ''}>${arrow}${fmt2(Math.abs(d))}</span>`;
 }
 
-/* 하단 — 모집단위별 4개년 비교 */
-function bottomSection(uv, cur, picked, total){
-  if (!picked.length){
+/* 최상단 — 담은 모집단위의 4개년 비교. 여러 대학을 섞어 담을 수 있다. */
+function dashSection(){
+  const all = basketRows();
+  if (!all.length){
     return `<h2 class="sec">모집단위별 4개년 비교</h2>
-      <div class="empty"><b>표시할 모집단위가 없습니다</b>왼쪽에서 전형과 모집단위를 선택하거나, 키워드 필터를 지워보세요.</div>`;
+      <div class="empty"><b>대시보드가 비어 있습니다</b>
+        왼쪽에서 <span class="k">대학 → 전형 → 모집단위</span> 를 고른 뒤 <span class="k">추가</span> 를 누르면 여기에 4개년 비교 카드가 쌓입니다.<br>
+        다른 대학의 모집단위도 함께 담아 나란히 비교할 수 있습니다.</div>`;
   }
-  const capped = total > MAX_ROWS;
+  const shown = S.onlyIp ? all.filter(r => r.hasIp) : all;
+  const capped = shown.length > MAX_ROWS;
+  const picked = sortRows(shown).slice(0, MAX_ROWS);
+
   const ratios = picked.map(r => r.ratio).filter(v => v != null).sort((a, b) => a - b);
   const q = p => ratios.length ? ratios[Math.min(ratios.length - 1, Math.floor(ratios.length * p))] : 0;
   const q1 = q(0.25), q2 = q(0.5), q3 = q(0.75);
   const lv = v => v == null ? 'lv2' : (v <= q1 ? 'lv1' : v <= q2 ? 'lv2' : v <= q3 ? 'lv3' : 'lv4');
 
   return `
-  <h2 class="sec">모집단위별 4개년 비교 <small>${cur.year} · ${cur.year-1} · ${cur.year-2} · ${cur.year-3}</small>
-    <span class="pill">${picked.length}건${capped ? ` / 전체 ${total}건` : ''}</span></h2>
-  ${capped ? `<div class="notice">선택한 모집단위가 ${total}건입니다. 대시보드는 최대 ${MAX_ROWS}건까지 표시하므로 <b>${esc($('sortsel').selectedOptions[0].textContent)}</b> 상위 ${MAX_ROWS}건만 보여줍니다.</div>` : ''}
+  <h2 class="sec">모집단위별 4개년 비교 <small>${CUR_YEAR} · ${CUR_YEAR-1} · ${CUR_YEAR-2} · ${CUR_YEAR-3}</small>
+    <span class="pill">${all.length}건</span>
+    <button type="button" id="basketclear" class="chipbtn">전체 제거</button></h2>
+  ${S.onlyIp && shown.length !== all.length
+      ? `<div class="notice">입결 자료가 있는 ${shown.length}건만 보이는 중입니다. 담은 것은 ${all.length}건입니다.</div>` : ''}
+  ${capped ? `<div class="notice">담은 모집단위가 ${shown.length}건입니다. 최대 ${MAX_ROWS}건까지만 표시합니다.</div>` : ''}
   <div class="legend"><span class="lv1">경쟁률 하위 25%</span><span class="lv2">25~50%</span><span class="lv3">50~75%</span><span class="lv4">상위 25%</span>
     <span style="--c:transparent;margin-left:auto;color:var(--ink-3)">입결 = 최종등록자 교과등급 상위 50%·70% 지점</span></div>
-  <div class="cards">${picked.map(r => cardHtml(r, lv(r.ratio), cur)).join('')}</div>`;
+  <div class="cards">${picked.map(r => cardHtml(r, lv(r.ratio))).join('')}</div>`;
 }
 
-function cardHtml(r, lvCls, cur){
+function cardHtml(r, lvCls){
   const subTxt = r.sub && headUnit(r.sub) !== headUnit(r.unit) ? r.sub : '';
   const estimated = r.years.some(y => y.src === '입결');
+  const curYear = r.years[0] ? r.years[0].year : CUR_YEAR;
   return `<div class="card ${lvCls}">
     <div class="top">
       <div class="title">
+        ${r.univName ? `<div class="u">${esc(r.univName)}</div>` : ''}
         <div class="t">${esc(r.jung)}</div>
         <div class="d">${esc(r.unit)}</div>
         ${subTxt ? `<div class="s">${esc(subTxt)}</div>` : ''}
       </div>
       <div class="bignum">
-        <b>${fmt2(r.ratio)}</b><small>: 1 · ${cur.year}</small>
+        <b>${fmt2(r.ratio)}</b><small>: 1 · ${curYear}</small>
         <div style="margin-top:3px">${deltaHtml(r.delta, true)}</div>
       </div>
     </div>
@@ -973,6 +1125,7 @@ function cardHtml(r, lvCls, cur){
       ${r.ipApprox ? '<span class="tag warn">입결 유사 매칭</span>' : ''}
       ${r.altJungs.length ? `<span class="tag warn">과거 전형명 다름: ${esc(r.altJungs.join(' / '))}</span>` : ''}
       ${estimated ? '<span class="tag" style="border-style:dashed">* 지원인원 = 모집×경쟁률 추정</span>' : ''}
+      ${r.bk ? `<button type="button" class="rm" data-rm="${esc(r.bk)}">제거</button>` : ''}
     </div>
   </div>`;
 }
