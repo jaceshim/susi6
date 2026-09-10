@@ -8,6 +8,7 @@
 index.html                     대시보드 (의존성 없음, 폰트만 외부)
 data/susi_ratio.json           경쟁률 — 수동 업데이트 대상
 data/ipgyeol.json              입결 50%·70% 컷 (2024~2026), 학년도 단위로만 갱신
+tools/normalize_susi.py        수집기가 놓친 표 구조를 되돌리는 정규화 (아래 참고)
 .github/workflows/deploy.yml   main push 시 검증 → Pages 배포
 ```
 
@@ -20,12 +21,31 @@ data/ipgyeol.json              입결 50%·70% 컷 (2024~2026), 학년도 단위
 cp ~/Downloads/susi_merged.json data/susi_ratio.json
 
 python3 -m json.tool data/susi_ratio.json > /dev/null   # 문법 확인
+python3 tools/normalize_susi.py                         # 표 구조 정규화 ← 빠뜨리면 Actions 가 막는다
 git add data/susi_ratio.json
 git commit -m "chore(data): 경쟁률 갱신 $(date +%Y-%m-%d\ %H:%M)"
 git push
 ```
 
 push 후 Actions 가 JSON 구조를 검증하고 Pages 에 배포합니다. 검증이 실패하면 배포되지 않으므로 깨진 데이터가 올라가는 일은 없습니다.
+
+### 정규화가 필요한 이유
+
+수집기는 진학사·유웨이 경쟁률 표의 열을 **헤더 문구로** 표준 키에 맞춥니다. 그런데 헤더는 대학마다 제각각이라 (`모집단위`, `세부학과(과)전공`, `모집단위전공명`, `모집단위개설전공` …) 처음 보는 문구가 나오면 그 열이 `unit` 에 들어가지 못하고 헤더 이름 그대로 키가 되어 버립니다. `index.html` 은 `unit` 을 읽으므로 모집단위 이름이 빈 카드가 됩니다.
+
+`tools/normalize_susi.py` 가 이런 왜곡 다섯 가지를 되돌립니다. 멱등해서 몇 번을 돌려도 안전합니다.
+
+| | 증상 | 예 |
+|---|---|---|
+| R1 | 전형별 요약표가 `details` 에 섞여 가짜 전형으로 잡힘 | 강원대 캠퍼스별 "… 전형별" |
+| R2 | 앞 칸이 비어 행 전체가 한 칸 밀리고 경쟁률이 `col` 로 새어나감 | 성균관대 (11.30:1 이 226:1 로 표시) |
+| R3 | 모집단위 이름이 원본 헤더 키에 남음 | 선문대 `세부학과과전공` 등 6개 대학 |
+| R4 | rowspan 잔여물인 빈 행 | 장로회신학대 |
+| R5 | 전형명 없이 코드만 수집됨 | 중앙대 (유웨이 파서 한계 — `전형 0008` 로 대체) |
+
+처음 보는 헤더가 나오면 `--check` 가 그 키 이름을 찍고 실패합니다. `normalize_susi.py` 의 `UNIT_NAME_KEYS` 에 추가하면 됩니다.
+
+R5 의 중앙대 전형명은 수집 단계에서 유실되어 파일 안에서는 복구할 수 없습니다. 코드 기반 임시 라벨이라 실제 전형명(논술·학생부교과 등)이 아니므로, 수집기가 고쳐지면 자연히 제 이름을 찾습니다.
 
 `universities` 배열에 대학을 추가하면 선택 목록에 자동으로 나타납니다. 아직 수집하지 않은 대학은 목록에 남아 있고, 선택하면 "경쟁률 데이터 없음" 안내가 표시됩니다.
 

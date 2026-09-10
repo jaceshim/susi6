@@ -31,60 +31,81 @@ jobs:
             python3 -c "import json,sys; json.load(open(sys.argv[1], encoding='utf-8'))" "$f"
           done
 
+      - name: susi_ratio.json 정규화 상태 검사
+        run: python3 tools/normalize_susi.py --check
+
       - name: susi_ratio.json 구조 검사
         run: |
           python3 - <<'PY'
           import json, sys
+          from collections import Counter
 
           d = json.load(open('data/susi_ratio.json', encoding='utf-8'))
           errs = []
+          nodata = []   # 아직 경쟁률이 열리지 않은 대학 — 실패가 아니다
+
+          def err(what, where=''):
+              errs.append((what, where))
 
           if 'universities' not in d or not isinstance(d['universities'], list):
-              errs.append('universities 배열이 없습니다')
+              err('universities 배열이 없습니다')
+          elif not d['universities']:
+              err('universities 가 비어 있습니다')
           else:
-              if not d['universities']:
-                  errs.append('universities 가 비어 있습니다')
               for i, u in enumerate(d['universities']):
-                  where = f"universities[{i}]"
                   name = u.get('university')
                   if not name:
-                      errs.append(f'{where}: university 이름이 없습니다')
+                      err('university 이름이 없습니다', f'universities[{i}]')
                       continue
                   seasons = u.get('seasons')
-                  if not isinstance(seasons, list) or not seasons:
-                      errs.append(f'{name}: seasons 가 없습니다')
+                  if not isinstance(seasons, list):
+                      err('seasons 배열이 없습니다', name)
+                      continue
+                  if not seasons:
+                      # 접수 준비중이거나 진학사에 지난 자료가 없는 대학.
+                      # summary.noPastData 에도 기록되며 화면에는 "미수집" 으로 나온다.
+                      nodata.append(name)
                       continue
                   for s in seasons:
                       y = s.get('year')
                       if not isinstance(y, int):
-                          errs.append(f'{name}: season.year 가 정수가 아닙니다 ({y!r})')
+                          err(f'season.year 가 정수가 아닙니다 ({y!r})', name)
                       if s.get('kind') not in ('live', 'past'):
-                          errs.append(f'{name} {y}: kind 는 live 또는 past 여야 합니다 ({s.get("kind")!r})')
+                          err(f'kind 는 live 또는 past 여야 합니다 ({s.get("kind")!r})', f'{name} {y}')
                       if not isinstance(s.get('details'), list):
-                          errs.append(f'{name} {y}: details 배열이 없습니다')
+                          err('details 배열이 없습니다', f'{name} {y}')
                           continue
                       for det in s['details']:
                           if not det.get('name'):
-                              errs.append(f'{name} {y}: 전형 name 이 없습니다')
+                              err('전형 name 이 없습니다', f'{name} {y} code={det.get("code")!r}')
                           for un in det.get('units', []):
                               if not un.get('unit'):
-                                  errs.append(f'{name} {y} {det.get("name")}: 모집단위 unit 이 없습니다')
+                                  err('모집단위 unit 이 없습니다', f'{name} {y} {det.get("name")}')
                               for k in ('recruit', 'applied'):
                                   v = un.get(k)
                                   if v is not None and not isinstance(v, (int, float)):
-                                      errs.append(f'{name} {y} {un.get("unit")}: {k} 가 숫자가 아닙니다 ({v!r})')
+                                      err(f'{k} 가 숫자가 아닙니다', f'{name} {y} {un.get("unit")}: {v!r}')
 
           if errs:
-              print('검증 실패:')
-              for e in errs[:50]:
-                  print('  ✗', e)
-              if len(errs) > 50:
-                  print(f'  … 외 {len(errs) - 50}건')
+              # 같은 원인이 수백 건씩 쏟아지므로 유형별로 묶어서 보여준다
+              print(f'검증 실패 — {len(errs)}건')
+              for kind, n in Counter(k for k, _ in errs).most_common():
+                  print(f'  ✗ {kind} — {n}건')
+                  where = list(dict.fromkeys(w for k, w in errs if k == kind and w))
+                  for w in where[:5]:
+                      print(f'      {w}')
+                  if len(where) > 5:
+                      print(f'      … 외 {len(where) - 5}곳')
+              print()
+              print('모집단위·전형 이름이 비어 있다면 수집기가 표 열을 놓친 것입니다.')
+              print('`python3 tools/normalize_susi.py` 로 복구되는지 먼저 확인하세요.')
               sys.exit(1)
 
           n = len(d['universities'])
           total = sum(len(s.get('details', [])) for u in d['universities'] for s in u['seasons'])
           print(f'✓ 대학 {n}개 · 시즌 전형 {total}건 · generatedAt {d.get("generatedAt")}')
+          if nodata:
+              print(f'· 경쟁률 미수집 {len(nodata)}개 — {", ".join(nodata)}')
           PY
 
       - name: ipgyeol.json 구조 검사
