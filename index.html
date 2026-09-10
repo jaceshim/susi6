@@ -362,7 +362,8 @@ function normJung(s){
   let v = String(s || '').replace(/\s/g, '');
   v = v.replace(/학생부교과/g, '교과').replace(/학생부종합/g, '종합');
   v = v.replace(/전형$/, '');
-  v = v.replace(/[ⅠⅡⅢⅣ]/g, '');              // 일반Ⅰ/일반Ⅱ → 일반
+  /* 로마숫자는 남긴다 — 이 키로 입결 행을 묶기 때문에 떼면 종합Ⅰ·종합Ⅱ 가 한 칸에 섞이고,
+     matchJungName 이 Ⅱ 를 골라도 Ⅰ 의 행이 나온다. 이름을 느슨하게 잇는 일은 그쪽이 맡는다. */
   return v;
 }
 /* 전형명을 (종류, 알맹이) 로 쪼갠다.
@@ -373,20 +374,33 @@ function normJung(s){
    캠퍼스 접두어·정원내외·괄호·'전형' 은 표기 차이일 뿐 전형을 가르지 않는다.
 
    core 는 종류를 뗀 알맹이, full 은 붙은 원형. '교과성적우수자' 처럼 종류 표시가
-   이름의 일부인 경우가 있어 둘 다 들고 비교한다. */
+   이름의 일부인 경우가 있어 둘 다 들고 비교한다.
+   coreN·fullN 은 로마숫자를 살린 짝이다 — 아래 matchJungName 참고. */
 function jungParts(s){
   let v = String(s || '').replace(/\s/g, '');
-  v = v.replace(/[[\](){}<>]/g, '');              // '[정원내]' 도 이때 풀린다
+  v = v.replace(/＋/g, '+').replace(/[⋅･‧ㆍ]/g, '·');   // 같은 기호의 다른 코드값
+  /* 반영비율 설명은 이름이 아니다 — '일반전형 [교과 100%]', '(교과80%+면접20% / 6과목)'.
+     한쪽 자료에만 붙어 있어 그대로 두면 알맹이가 통째로 어긋난다. */
+  v = v.replace(/[([{【][^)\]}】]*%[^)\]}】]*[)\]}】]/g, '');
+  v = v.replace(/[[\](){}<>【】]/g, '');           // '[정원내]' 도 이때 풀린다
   v = v.replace(/^(?:정원[내외])+/, '');
   v = v.replace(/^.*?캠퍼스/, '');
-  v = v.replace(/[ⅠⅡⅢⅣ]/g, '');                   // 일반Ⅰ/일반Ⅱ → 일반
   v = v.replace(/학생부교과/g, '교과').replace(/학생부종합/g, '종합');
   v = v.replace(/전형/g, '');
-  const full = v.replace(/^[-·,\/]+|[-·,\/]+$/g, '');
+  /* 같은 대학이 같은 갈래를 Ⅰ·I·1 로 섞어 적는다 —
+     경성대 '지역인재II' ↔ 입결 '종합(지역인재Ⅱ)', 중원대 '일반전형1' ↔ '교과(일반전형Ⅰ)'.
+     앞이 한글(또는 시작)이고 뒤에 글자가 없을 때만 바꾼다 — 'AI', 'SW', '서해5도' 는 건드리지 않는다. */
+  v = v.replace(/(^|[가-힣])(III|II|IV|I|[1-4])(?![0-9A-Za-z가-힣])/g,
+                (_, p, d) => p + ({'1':'Ⅰ','2':'Ⅱ','3':'Ⅲ','4':'Ⅳ','I':'Ⅰ','II':'Ⅱ','III':'Ⅲ','IV':'Ⅳ'})[d]);
+  const cut = x => x.replace(/^[-·,\/]+|[-·,\/]+$/g, '');
+  const fullN = cut(v);                           // 로마숫자를 살린 형태
+  const full  = cut(v.replace(/[ⅠⅡⅢⅣ]/g, ''));    // 일반Ⅰ/일반Ⅱ → 일반
   const m = full.match(/^(교과|종합|논술|실기|특기)/);
   const kind = m ? m[1] : '';
   const core = m ? full.slice(kind.length).replace(/^[-·,\/]+/, '') : full;
-  return {kind, core, full};
+  const mN = fullN.match(/^(교과|종합|논술|실기|특기)/);
+  const coreN = mN ? fullN.slice(mN[1].length).replace(/^[-·,\/]+/, '') : fullN;
+  return {kind, core, full, coreN, fullN};
 }
 
 /* 지원자격 제한 표시. 서로 다르면 절대 붙이지 않는다 —
@@ -417,6 +431,10 @@ function jungKeys(p, stem){
     if (stem && v.startsWith(stem) && v.length - stem.length >= 2) out.push(v.slice(stem.length));
   }
   return out;
+}
+/* 로마숫자를 살린 짝 */
+function jungKeysN(p, stem){
+  return jungKeys({core: p.coreN, full: p.fullN}, stem);
 }
 /* 모집단위: "인문학부 | 국어국문학과 | 사학과" → 앞부분만 */
 function headUnit(s){
@@ -451,23 +469,68 @@ function editDist(a, b){
 function approxTol(s){ return Math.max(1, Math.floor(s.length * 0.2)); }
 function commonPrefix(a, b){ let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++; return i; }
 
+/* 입결은 긴 전형명을 '기본-갈래' 로 줄여 적는다 —
+   경쟁률 '잠재능력우수자면접', 입결 '잠재능력-면접'.
+   토막이 모두 순서대로 들어 있고 첫 토막이 앞에서 시작할 때만 같은 전형으로 본다.
+   토막을 하나라도 빠뜨리면 '잠재능력-서류' 가 '…면접전형' 에 붙는다.
+
+   돌려주는 값은 겹친 글자 수. 종류 표시(교과/종합)뿐인 토막은 세지 않는다 —
+   '교과-교과' 가 '교과-지역인재경북-교과' 에 붙는 것 같은 헛매칭을 막는다. */
+const JUNG_KINDS = ['교과', '종합', '논술', '실기', '특기'];
+function segScore(a, b){
+  const parts = a.split(/[-·,\/]+/).filter(Boolean);
+  if (parts.length < 2) return 0;
+  let at = 0, real = 0;
+  for (let i = 0; i < parts.length; i++){
+    const p = parts[i];
+    if (p.length < 2) return 0;                        // 'S/W인재'·'G-IMPACT인재' 의 기호는 이름의 일부다
+    const k = b.indexOf(p, at);
+    if (k < 0 || (i === 0 && k !== 0)) return 0;
+    at = k + p.length;
+    if (JUNG_KINDS.indexOf(p) < 0) real += p.length;
+  }
+  return real;
+}
+
 /* 전형명 후보 고르기.
-   ① 알맹이 완전일치  ② 한쪽이 다른 쪽을 접두로 포함 (일반 ↔ 일반학생 같은 개명)
+   ⓪ 로마숫자까지 같은 완전일치  ① 알맹이 완전일치
+   ② 토막 이름 (잠재능력-면접 ↔ 잠재능력우수자면접)
+   ③ 한쪽이 다른 쪽을 접두로 포함 (일반 ↔ 일반학생 같은 개명)
+
+   ⓪ 을 먼저 보는 이유: 아래 단계는 '일반Ⅰ/일반Ⅱ → 일반' 로 숫자를 떼기 때문에
+   두 전형이 한 이름이 되어 버린다. 숫자가 살아 있는 짝이 있으면 그쪽이 맞다.
 
    같은 종류(교과/종합)라는 이유로 넓게 붙이지 않는다. 그렇게 하면
    종합(기회균형)·종합(서강가치)처럼 입결이 공개되지 않은 전형에
    종합(일반)의 입결이 붙어버려, 없는 숫자를 있는 것처럼 보여준다. */
 function matchJungName(names, target, stem){
   const t = jungParts(target), tm = jungMarks(target);
-  const tset = jungKeys(t, stem);
+  const tset = jungKeys(t, stem), tsetN = jungKeysN(t, stem);
   const cand = names.map(n => ({n, p: jungParts(n), m: jungMarks(n)}));
   const kindOk = p => !t.kind || !p.kind || t.kind === p.kind;
+
+  const exactN = cand.filter(c => kindOk(c.p) &&
+    jungKeysN(c.p, stem).some(v => tsetN.indexOf(v) >= 0));
+  if (exactN.length) return {names: exactN.map(c => c.n), approx: false};
 
   const exact = cand.filter(c => kindOk(c.p) &&
     jungKeys(c.p, stem).some(v => tset.indexOf(v) >= 0));
   if (exact.length) return {names: exact.map(c => c.n), approx: false};
 
   if (tset.length){
+    /* 토막 이름 — 가장 많이 겹친 후보 하나만. 같은 점수가 둘이면 어느 쪽인지 알 수 없다. */
+    let seg = null, segLen = 0, segTie = false;
+    for (const c of cand){
+      if (!kindOk(c.p) || c.m !== tm) continue;
+      let s = 0;
+      for (const a of jungKeys(c.p, stem)){
+        for (const b of tset) s = Math.max(s, segScore(a, b), segScore(b, a));
+      }
+      if (s > segLen){ segLen = s; seg = c.n; segTie = false; }
+      else if (s && s === segLen && c.n !== seg) segTie = true;
+    }
+    if (seg && !segTie) return {names: [seg], approx: true};
+
     let best = null, bestLen = -1;
     for (const c of cand){
       if (!kindOk(c.p) || c.m !== tm) continue;
